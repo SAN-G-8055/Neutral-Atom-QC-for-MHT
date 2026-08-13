@@ -1,0 +1,33 @@
+{
+  "algorithm": "gaussian_background_otsu_hysteresis_voronoi",
+  "config": {
+    "background_sigma": 8.0,
+    "closing_size": 3,
+    "connectivity": 8,
+    "gaussian_sigma": 1.0,
+    "high_threshold_factor": 1.2,
+    "histogram_bins": 256,
+    "histogram_percentile_high": 99.9,
+    "histogram_percentile_low": 0.1,
+    "low_threshold_factor": 0.04,
+    "max_final_area_px": 1500,
+    "max_seed_area_px": 1000,
+    "min_final_area_px": 40,
+    "min_seed_area_px": 40,
+    "opening_size": 2
+  },
+  "coordinate_convention": "zero-based pixels; x=column, y=row",
+  "detection_count": 74,
+  "high_threshold": 39.76255034764418,
+  "image_dtype": "uint8",
+  "image_shape_yx": [
+    576,
+    720
+  ],
+  "input": "Train Data/02/t025.tif",
+  "input_sha256": "874bcd7da404aafa6ddf24a32d514d18dcffb9fc04b53c1b1d6d11a09e4832c7",
+  "low_threshold": 1.3254183449214727,
+  "otsu_threshold": 33.13545862303682,
+  "processing_seconds": 0.3403740999638103,
+  "seed_count": 74
+}
