@@ -1,0 +1,119 @@
+{
+  "dataset": {
+    "fingerprint_scope": "all 300 sequence-01 raw/gold frame pairs",
+    "frame_selection": {
+      "continuous": true,
+      "count": 300,
+      "first": 0,
+      "last": 299
+    },
+    "gold_source": "human GT/TRA tracking markers",
+    "gold_tracking_masks_sha256": "4795100971222e24686c8dae8532c24d4c99d7401c08b418937b2968dd56f01b",
+    "name": "PhC-C2DL-PSC",
+    "official_training_archive": "https://data.celltrackingchallenge.net/training-datasets/PhC-C2DL-PSC.zip",
+    "raw_frames_sha256": "46c15979d995a6e8f3bbbed78652965c7575fba8f4d49da87493903e051b90fa",
+    "sequence": "01"
+  },
+  "gate_sensitivity": {
+    "10_px": {
+      "f1": 0.778027956873564,
+      "false_negatives": 20781,
+      "false_positives": 8104,
+      "gate_px": 10.0,
+      "gold_count": 71403,
+      "localization_rmse_px": 3.6924052602253696,
+      "macro_f1": 0.8192160396436373,
+      "macro_precision": 0.8668384662132401,
+      "macro_recall": 0.7840594788230205,
+      "precision": 0.8620032013077683,
+      "predicted_count": 58726,
+      "recall": 0.7089618083273812,
+      "true_positives": 50622
+    },
+    "15_px": {
+      "f1": 0.7925981141790069,
+      "false_negatives": 19833,
+      "false_positives": 7156,
+      "gate_px": 15.0,
+      "gold_count": 71403,
+      "localization_rmse_px": 4.046685174856022,
+      "macro_f1": 0.831252977699615,
+      "macro_precision": 0.8799683346847964,
+      "macro_recall": 0.7952819263634576,
+      "precision": 0.8781459660116473,
+      "predicted_count": 58726,
+      "recall": 0.722238561404983,
+      "true_positives": 51570
+    },
+    "5_px": {
+      "f1": 0.6368296075432839,
+      "false_negatives": 29968,
+      "false_positives": 17291,
+      "gate_px": 5.0,
+      "gold_count": 71403,
+      "localization_rmse_px": 2.593676048281541,
+      "macro_f1": 0.6852261510961829,
+      "macro_precision": 0.7230779279116969,
+      "macro_recall": 0.6573640346068177,
+      "precision": 0.7055648264823077,
+      "predicted_count": 58726,
+      "recall": 0.5802977465932804,
+      "true_positives": 41435
+    }
+  },
+  "method": {
+    "config": {
+      "background_sigma_px": 8.0,
+      "closing_size_px": 3,
+      "gaussian_sigma_px": 1.0,
+      "high_threshold_factor": 1.2,
+      "low_threshold_factor": 0.04,
+      "max_detection_area_px": 1500,
+      "max_seed_area_px": 1000,
+      "min_detection_area_px": 40,
+      "min_seed_area_px": 40,
+      "opening_size_px": 2
+    },
+    "coordinates": "zero-based pixels; x_px is column, y_px is row; origin is top-left",
+    "detector": "Gaussian denoise -> broad-background subtraction -> Otsu high-confidence seeds -> morphology and seed-area filter -> connected low-threshold support -> within-component nearest-seed assignment -> final-area filter",
+    "event_definition": "One positive final instance label in one frame, observed at its geometric centroid; prediction IDs are frame-local; gold IDs retain source labels, but evaluation does not use either as cross-frame track identity.",
+    "gold_is_not_detector_input": true,
+    "matching": "Independently per frame: maximum-cardinality one-to-one centroid matching inside an inclusive Euclidean gate; minimum total distance breaks cardinality ties.",
+    "parameter_provenance": "Numeric detector defaults were fixed by the earlier sequence-02/frame-025 baseline before this full sequence-01 evaluation.",
+    "primary_f1_formula": "2 * sum(TP) / (sum(predicted) + sum(gold))",
+    "primary_figure_of_merit": "micro-averaged centroid F1 at a fixed 10 px gate"
+  },
+  "overview_frames": [
+    0,
+    60,
+    120,
+    180,
+    240,
+    299
+  ],
+  "primary_metrics": {
+    "f1": 0.778027956873564,
+    "false_negatives": 20781,
+    "false_positives": 8104,
+    "gate_px": 10.0,
+    "gold_count": 71403,
+    "localization_rmse_px": 3.6924052602253696,
+    "macro_f1": 0.8192160396436373,
+    "macro_precision": 0.8668384662132401,
+    "macro_recall": 0.7840594788230205,
+    "precision": 0.8620032013077683,
+    "predicted_count": 58726,
+    "recall": 0.7089618083273812,
+    "true_positives": 50622
+  },
+  "software": {
+    "matplotlib": "3.10.7",
+    "neutral_atom_mht": "0.1.0",
+    "numpy": "2.3.4",
+    "operating_system": "Windows-10-10.0.19045-SP0",
+    "pillow": "12.0.0",
+    "python": "3.13.9",
+    "python_implementation": "CPython",
+    "scipy": "1.16.2"
+  }
+}
