@@ -14,6 +14,7 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.ipynb_checkpoints/
 .coverage
 htmlcov/
 .venv/
@@ -21,14 +22,6 @@ venv/
 *.egg-info/
 dist/
 build/
-
-# LaTeX intermediates; the source and final PDFs remain versioned.
-*.aux
-*.fdb_latexmk
-*.fls
-*.log
-*.out
-*.synctex.gz
 
 # Editors and operating systems
 .idea/
