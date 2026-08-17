@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import replace
 
 import matplotlib
 
@@ -12,36 +12,23 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
+from neutral_atom_mht.detection import Detection
+from neutral_atom_mht.evaluation import Match, evaluate_frame
 from neutral_atom_mht.visualization import (
     save_detection_overview,
     save_per_frame_performance,
 )
 
 
-@dataclass(frozen=True)
-class Detection:
-    frame: int
-    detection_id: int
-    x_px: float
-    y_px: float
-
-
-@dataclass(frozen=True)
-class Match:
-    predicted_id: int
-    reference_id: int
-    distance_px: float
-
-
-@dataclass(frozen=True)
-class FrameEvaluation:
-    frame: int
-    matches: tuple[Match, ...]
-    false_positive_ids: tuple[int, ...]
-    false_negative_ids: tuple[int, ...]
-    precision: float
-    recall: float
-    f1: float
+def _detection(
+    frame: int,
+    detection_id: int,
+    x_px: float,
+    y_px: float,
+    *,
+    source: str = "prediction",
+) -> Detection:
+    return Detection("01", frame, detection_id, x_px, y_px, 1, source)
 
 
 def _example_data():
@@ -50,32 +37,19 @@ def _example_data():
         2: np.full((24, 32), 127, dtype=np.uint8),
     }
     predictions = {
-        0: [Detection(0, 10, 5.0, 6.0), Detection(0, 11, 22.0, 15.0)],
-        2: [Detection(2, 20, 12.0, 10.0)],
+        0: [_detection(0, 10, 5.0, 6.0), _detection(0, 11, 22.0, 15.0)],
+        2: [_detection(2, 20, 12.0, 10.0)],
     }
     references = {
-        0: [Detection(0, 1, 5.5, 6.0), Detection(0, 2, 14.0, 13.0)],
-        2: [Detection(2, 3, 12.5, 10.0)],
+        0: [
+            _detection(0, 1, 5.5, 6.0, source="gold"),
+            _detection(0, 2, 14.0, 13.0, source="gold"),
+        ],
+        2: [_detection(2, 3, 12.5, 10.0, source="gold")],
     }
     evaluations = {
-        0: FrameEvaluation(
-            frame=0,
-            matches=(Match(10, 1, 0.5),),
-            false_positive_ids=(11,),
-            false_negative_ids=(2,),
-            precision=0.5,
-            recall=0.5,
-            f1=0.5,
-        ),
-        2: FrameEvaluation(
-            frame=2,
-            matches=(Match(20, 3, 0.5),),
-            false_positive_ids=(),
-            false_negative_ids=(),
-            precision=1.0,
-            recall=1.0,
-            f1=1.0,
-        ),
+        frame: evaluate_frame(predictions[frame], references[frame], max_distance_px=1.0)
+        for frame in images
     }
     return images, predictions, references, evaluations
 
@@ -112,14 +86,9 @@ def test_save_per_frame_performance_writes_headless_figure_and_closes_it(tmp_pat
 
 def test_overview_rejects_evaluation_ids_absent_from_detections(tmp_path):
     images, predictions, references, evaluations = _example_data()
-    evaluations[0] = FrameEvaluation(
-        frame=0,
-        matches=(Match(999, 1, 0.5),),
-        false_positive_ids=(11,),
-        false_negative_ids=(2,),
-        precision=0.5,
-        recall=0.5,
-        f1=0.5,
+    evaluations[0] = replace(
+        evaluations[0],
+        matches=(Match("01", 0, 999, 1, 0.5),),
     )
 
     with pytest.raises(ValueError, match="unknown predicted ID"):
@@ -137,14 +106,10 @@ def test_overview_rejects_evaluation_ids_absent_from_detections(tmp_path):
 
 def test_overview_rejects_non_one_to_one_matches(tmp_path):
     images, predictions, references, evaluations = _example_data()
-    evaluations[0] = FrameEvaluation(
-        frame=0,
-        matches=(Match(10, 1, 0.5), Match(10, 2, 9.0)),
-        false_positive_ids=(11,),
-        false_negative_ids=(),
-        precision=1.0,
-        recall=1.0,
-        f1=1.0,
+    evaluations[0] = replace(
+        evaluations[0],
+        matches=(Match("01", 0, 10, 1, 0.5), Match("01", 0, 10, 2, 9.0)),
+        unmatched_reference_ids=(),
     )
 
     with pytest.raises(ValueError, match="predicted ID more than once"):
@@ -167,14 +132,9 @@ def test_performance_requires_at_least_one_evaluation(tmp_path):
 
 def test_overview_rejects_events_omitted_from_evaluation(tmp_path):
     images, predictions, references, evaluations = _example_data()
-    evaluations[0] = FrameEvaluation(
-        frame=0,
-        matches=(Match(10, 1, 0.5),),
-        false_positive_ids=(),
-        false_negative_ids=(2,),
-        precision=1.0,
-        recall=0.5,
-        f1=2 / 3,
+    evaluations[0] = replace(
+        evaluations[0],
+        unmatched_predicted_ids=(),
     )
 
     with pytest.raises(ValueError, match="omits predicted ID"):

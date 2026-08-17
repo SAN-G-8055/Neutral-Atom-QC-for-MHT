@@ -33,7 +33,7 @@ def test_three_bright_cells_are_detected_near_their_centres() -> None:
 
     result = detect_frame(image, sequence="synthetic", frame=4, config=config)
 
-    actual = result.points
+    actual = np.asarray([(event.x_px, event.y_px) for event in result.detections])
     distance = np.linalg.norm(actual[:, None, :] - np.asarray(expected)[None, :, :], axis=2)
     assert len(result.detections) == 3
     assert np.all(np.min(distance, axis=0) < 2.0)

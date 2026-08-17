@@ -21,7 +21,6 @@ def make_track(**changes: object) -> TrackState:
         "state": (2.0, 3.0, 1.0, -1.0),
         "covariance": tuple(map(tuple, np.eye(4))),
         "log_odds": 0.0,
-        "posterior_probability": 0.5,
         "observation_history": ((0, 3),),
     }
     values.update(changes)
@@ -55,9 +54,10 @@ def test_track_models_normalize_numpy_scalars_and_arrays() -> None:
     assert isinstance(track.state[0], float)
 
 
-def test_track_rejects_a_tail_probability_inconsistent_with_log_odds() -> None:
-    with pytest.raises(ValueError, match="sigmoid"):
-        make_track(log_odds=-100.0, posterior_probability=1e-13)
+def test_track_probability_is_derived_from_log_odds() -> None:
+    track = make_track(log_odds=-100.0)
+
+    assert 0.0 < track.posterior_probability < 1e-40
 
 
 @dataclass(frozen=True)

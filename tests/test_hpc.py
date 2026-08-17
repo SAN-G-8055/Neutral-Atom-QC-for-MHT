@@ -12,11 +12,10 @@ from neutral_atom_mht.classical_solver import ClassicalSolver
 from neutral_atom_mht.detection import DetectionConfig
 from neutral_atom_mht.filtering import FilterConfig
 from neutral_atom_mht.gating import GateConfig
+from neutral_atom_mht.graph import GraphCluster
 from neutral_atom_mht.hpc import (
     HPC,
     HPCConfig,
-    PREPARATION_STAGES,
-    STAGE_ORDER,
     ObservedFrame,
     PreparedFrame,
     SequenceResult,
@@ -24,7 +23,7 @@ from neutral_atom_mht.hpc import (
 )
 from neutral_atom_mht.likelihood import BayesianConfig
 from neutral_atom_mht.models import Observation
-from neutral_atom_mht.neutral_atom import NeutralAtomSolver
+from neutral_atom_mht.neutral_atom import QuantumSolver
 
 
 def configured_hpc() -> HPC:
@@ -116,12 +115,29 @@ def test_preparation_calls_the_same_public_stages_a_user_can_inspect(
     prepared = tracker.prepare_observations(observations, frame=1)
 
     assert isinstance(prepared, PreparedFrame)
-    assert prepared.stage_order == PREPARATION_STAGES
     assert prepared.predicted_tracks == predicted
     assert prepared.gated_associations == gated
     assert prepared.hypotheses == hypotheses
     assert prepared.graph == graph
     assert prepared.clusters == clusters
+
+    altered_graph = replace(
+        graph,
+        nodes=(
+            replace(graph.nodes[0], weight=graph.nodes[0].weight + 1.0),
+            *graph.nodes[1:],
+        ),
+    )
+    with pytest.raises(ValueError, match="exactly encode"):
+        replace(prepared, graph=altered_graph)
+
+    split_clusters = tuple(
+        GraphCluster(index, (node_id,))
+        for index, node_id in enumerate(graph.node_ids)
+    )
+    with pytest.raises(ValueError, match="connected components"):
+        replace(prepared, clusters=split_clusters)
+
     assert set(tracker.graph_embedding(graph)) == set(graph.node_ids)
     figure = tracker.visualize_graph(graph, tmp_path / "graph.png")
     assert figure.is_file() and figure.stat().st_size > 0
@@ -164,7 +180,6 @@ def test_solver_result_is_read_only_until_bayesian_update_and_advance() -> None:
     assert filtered[0].hits == 2
 
     result = tracker.advance(prepared, run)
-    assert result.stage_order == STAGE_ORDER
     assert result.assigned_observation_ids == (1,)
     assert result.tracks == tracker.tracks
     assert len(result.tracks) == 2
@@ -240,7 +255,7 @@ def test_unimplemented_neutral_atom_run_cannot_change_tracking_state() -> None:
     )
     before = tracker.tracks
 
-    neutral_atom_run = tracker.solve(prepared, NeutralAtomSolver())
+    neutral_atom_run = tracker.solve(prepared, QuantumSolver())
 
     assert not neutral_atom_run.successful
     assert neutral_atom_run.results[0].status == "not_implemented"
@@ -270,6 +285,19 @@ def test_run_sequence_consumes_an_image_stream_once_and_returns_frozen_history()
     assert result.final_tracks[0].hits == 3
 
 
+def test_run_sequence_continues_after_the_last_applied_frame() -> None:
+    tracker = configured_hpc()
+    tracker.step(cell_image(), ClassicalSolver(), frame=3)
+
+    result = tracker.run_sequence(
+        (cell_image(centre_x=34.4), cell_image(centre_x=34.8)),
+        ClassicalSolver(),
+    )
+
+    assert tuple(step.frame for step in result.steps) == (4, 5)
+    assert tracker.last_frame == 5
+
+
 def test_explicit_frame_mapping_is_sorted_and_cannot_mix_with_start_frame() -> None:
     tracker = configured_hpc()
     frames = {1: cell_image(centre_x=34.4), 0: cell_image()}
@@ -283,3 +311,16 @@ def test_explicit_frame_mapping_is_sorted_and_cannot_mix_with_start_frame() -> N
             ClassicalSolver(),
             start_frame=0,
         )
+
+
+@pytest.mark.parametrize("frame", [2, 1])
+def test_frames_must_advance_strictly_after_a_step(frame: int) -> None:
+    tracker = configured_hpc()
+    tracker.step_observations(
+        (Observation(frame=2, observation_id=1, x=0.0, y=0.0),),
+        ClassicalSolver(),
+        frame=2,
+    )
+
+    with pytest.raises(ValueError, match="follow the last applied frame"):
+        tracker.prepare_observations((), frame=frame)

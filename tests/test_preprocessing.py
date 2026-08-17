@@ -19,7 +19,6 @@ from neutral_atom_mht.likelihood import (
     apply_bayesian_updates,
     calculate_association_hypotheses,
     hit_log_likelihood_ratio,
-    log_odds_to_probability,
     miss_log_likelihood_ratio,
 )
 from neutral_atom_mht.models import Observation, TrackState
@@ -39,7 +38,6 @@ def track(
         state=state,
         covariance=tuple(map(tuple, np.eye(4))),
         log_odds=log_odds,
-        posterior_probability=log_odds_to_probability(log_odds),
         hits=2,
         misses=misses,
         observation_history=((frame, track_id),),
@@ -116,11 +114,11 @@ def test_hit_and_miss_likelihoods_match_the_declared_equations() -> None:
 
 
 def test_finite_extreme_log_odds_stay_inside_probability_interval() -> None:
-    assert 0.0 < log_odds_to_probability(-1_000.0) < 1.0
-    assert 0.0 < log_odds_to_probability(1_000.0) < 1.0
+    assert 0.0 < track(log_odds=-1_000.0).posterior_probability < 1.0
+    assert 0.0 < track(log_odds=1_000.0).posterior_probability < 1.0
 
 
-def test_hypothesis_weights_are_calculated_once_before_solver_selection() -> None:
+def test_hypothesis_weights_use_hit_benefit_over_the_miss_baseline() -> None:
     predicted = predict_tracks(
         (track(),),
         frame=1,
@@ -147,7 +145,7 @@ def test_hypothesis_weights_are_calculated_once_before_solver_selection() -> Non
     assert filter_association_hypotheses(hypotheses) == hypotheses
 
 
-def test_same_bayesian_update_accepts_any_solver_selected_id() -> None:
+def test_bayesian_update_applies_selected_hits_and_unselected_misses() -> None:
     config = BayesianConfig(clutter_spatial_density=1e-4)
     predicted = predict_tracks(
         (track(), track(2, state=(10.0, 0.0, 0.0, 0.0))),
@@ -229,3 +227,24 @@ def test_candidate_filter_includes_the_declared_weight_boundary() -> None:
     assert filter_association_hypotheses(
         hypotheses, minimum_weight=hypotheses[0].weight
     ) == hypotheses
+
+
+def test_candidate_filter_owns_removal_of_negative_assignment_benefits() -> None:
+    predicted = predict_tracks(
+        (track(),),
+        frame=1,
+        seconds_per_frame=1.0,
+        config=FilterConfig(acceleration_std=0.0),
+    )
+    observations = (Observation(1, 1, 1.0, 2.0),)
+    hypotheses = calculate_association_hypotheses(
+        predicted,
+        gate_observations(predicted, observations, GateConfig()),
+        BayesianConfig(
+            detection_probability=0.5,
+            clutter_spatial_density=1.0,
+        ),
+    )
+
+    assert len(hypotheses) == 1 and hypotheses[0].weight < 0.0
+    assert filter_association_hypotheses(hypotheses) == ()

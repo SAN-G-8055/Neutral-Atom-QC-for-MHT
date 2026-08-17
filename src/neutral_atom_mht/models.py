@@ -111,7 +111,6 @@ class TrackState:
         tuple[float, float, float, float],
     ]
     log_odds: float
-    posterior_probability: float
     hits: int = 1
     misses: int = 0
     observation_history: tuple[tuple[int, int], ...] = ()
@@ -128,13 +127,6 @@ class TrackState:
             _positive_definite_matrix(self.covariance, 4, "covariance"),
         )
         object.__setattr__(self, "log_odds", _finite(self.log_odds, "log_odds"))
-        probability = _finite(self.posterior_probability, "posterior_probability")
-        if not 0.0 < probability < 1.0:
-            raise ValueError("posterior_probability must lie strictly between 0 and 1")
-        expected_probability = _sigmoid_probability(self.log_odds)
-        if probability != expected_probability:
-            raise ValueError("posterior_probability must equal sigmoid(log_odds)")
-        object.__setattr__(self, "posterior_probability", probability)
         object.__setattr__(self, "hits", _integer(self.hits, "hits", minimum=1))
         object.__setattr__(self, "misses", _integer(self.misses, "misses"))
         history: list[tuple[int, int]] = []
@@ -152,6 +144,12 @@ class TrackState:
     @property
     def position(self) -> tuple[float, float]:
         return (self.state[0], self.state[1])
+
+    @property
+    def posterior_probability(self) -> float:
+        """Existence probability derived from the canonical log-odds state."""
+
+        return _sigmoid_probability(self.log_odds)
 
 
 @dataclass(frozen=True, slots=True)
@@ -201,7 +199,6 @@ class AssociationHypothesis:
     observation_id: int
     log_likelihood_ratio: float
     posterior_log_odds: float
-    posterior_probability: float
     weight: float
     gate: GatedAssociation
 
@@ -236,19 +233,14 @@ class AssociationHypothesis:
             "posterior_log_odds",
             _finite(self.posterior_log_odds, "posterior_log_odds"),
         )
-        probability = _finite(self.posterior_probability, "posterior_probability")
-        if not 0.0 < probability < 1.0:
-            raise ValueError("posterior_probability must lie strictly between 0 and 1")
-        expected_probability = _sigmoid_probability(self.posterior_log_odds)
-        if probability != expected_probability:
-            raise ValueError(
-                "posterior_probability must equal sigmoid(posterior_log_odds)"
-            )
-        object.__setattr__(self, "posterior_probability", probability)
         weight = _finite(self.weight, "weight")
-        if weight <= 0.0:
-            raise ValueError("weight must be positive")
         object.__setattr__(self, "weight", weight)
+
+    @property
+    def posterior_probability(self) -> float:
+        """Association probability derived from its posterior log odds."""
+
+        return _sigmoid_probability(self.posterior_log_odds)
 
 
 def observations_from_detections(

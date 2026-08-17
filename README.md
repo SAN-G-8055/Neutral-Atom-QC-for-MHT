@@ -3,11 +3,11 @@
 This project turns microscopy images into cell observations, associates those
 observations over time, and makes every intermediate decision available for
 inspection. The object-oriented interface has two clear responsibilities:
-`HPC` owns image preprocessing and tracking state, while a `Solver` chooses a
-consistent set of weighted associations. `ClassicalSolver` is implemented and
-usable. `QuantumSolver` is intentionally only a documented neutral-atom
-input/output adapter; the physical solver is left for a later manual
-implementation.
+the Hypothesis Processing Controller (`HPC`) owns image preprocessing and
+tracking state, while a `Solver` chooses a consistent set of weighted
+associations. `ClassicalSolver` is implemented and usable. `QuantumSolver` is
+intentionally only a documented neutral-atom input/output adapter; the physical
+solver is left for a later manual implementation.
 
 No population of global hypotheses is retained. Candidate associations exist
 for one frame, the selected result updates one state per track, and the local
@@ -45,6 +45,13 @@ Python 3.11 or newer is required.
 ```powershell
 python -m pip install -e ".[test,notebook]"
 python -m pytest
+```
+
+To reproduce the pinned numerical environment used for the detection
+artifacts, constrain the runtime dependencies during installation:
+
+```powershell
+python -m pip install -c requirements-detection-lock.txt -e .
 ```
 
 Launch the root-level interface with:

@@ -23,7 +23,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from math import isfinite
 from numbers import Integral, Real
-from typing import Any, Mapping
+from typing import Any
 
 import numpy as np
 from scipy import ndimage as ndi
@@ -170,12 +170,6 @@ class DetectionResult:
             raise ValueError("labels must be a two-dimensional array")
         if len(self.detections) != self.diagnostics.detection_count:
             raise ValueError("diagnostic detection count does not match the event table")
-
-    @property
-    def points(self) -> np.ndarray:
-        if not self.detections:
-            return np.empty((0, 2), dtype=np.float64)
-        return np.asarray([(event.x_px, event.y_px) for event in self.detections])
 
 
 def _otsu_threshold(image: np.ndarray) -> float:
@@ -390,18 +384,4 @@ def detect_frame(
         labels=labels,
         detections=detections,
         diagnostics=diagnostics,
-    )
-
-
-def detect_sequence(
-    images: Mapping[int, np.ndarray],
-    *,
-    sequence: str,
-    config: DetectionConfig | None = None,
-) -> tuple[DetectionResult, ...]:
-    """Detect a frame mapping in ascending frame order."""
-
-    return tuple(
-        detect_frame(image, sequence=sequence, frame=frame, config=config)
-        for frame, image in sorted(images.items())
     )

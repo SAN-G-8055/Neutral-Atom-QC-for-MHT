@@ -39,8 +39,8 @@ class FrameEvaluationLike(Protocol):
 
     frame: int
     matches: Sequence[MatchLike]
-    false_positive_ids: Sequence[int]
-    false_negative_ids: Sequence[int]
+    unmatched_predicted_ids: Sequence[int]
+    unmatched_reference_ids: Sequence[int]
     precision: float
     recall: float
     f1: float
@@ -181,10 +181,12 @@ def save_detection_overview(
             matched_ids = set(matched_predicted_ids)
             matched_gold_ids = set(matched_reference_ids)
             false_positive_ids = {
-                int(detection_id) for detection_id in evaluation.false_positive_ids
+                int(detection_id)
+                for detection_id in evaluation.unmatched_predicted_ids
             }
             false_negative_ids = {
-                int(detection_id) for detection_id in evaluation.false_negative_ids
+                int(detection_id)
+                for detection_id in evaluation.unmatched_reference_ids
             }
             if len(matched_ids) != len(matched_predicted_ids):
                 raise ValueError(f"Frame {frame} matches a predicted ID more than once")
@@ -251,8 +253,12 @@ def save_detection_overview(
                 hollow=False,
             )
 
-            predicted_count = len(evaluation.matches) + len(evaluation.false_positive_ids)
-            reference_count = len(evaluation.matches) + len(evaluation.false_negative_ids)
+            predicted_count = len(evaluation.matches) + len(
+                evaluation.unmatched_predicted_ids
+            )
+            reference_count = len(evaluation.matches) + len(
+                evaluation.unmatched_reference_ids
+            )
             axis.set_title(
                 f"Frame {frame} | predicted {predicted_count}, gold {reference_count}"
                 f" | F1 {evaluation.f1:.3f}",
@@ -361,11 +367,11 @@ def save_per_frame_performance(
     recall = [float(evaluation.recall) for evaluation in ordered_evaluations]
     f1 = [float(evaluation.f1) for evaluation in ordered_evaluations]
     predicted_counts = [
-        len(evaluation.matches) + len(evaluation.false_positive_ids)
+        len(evaluation.matches) + len(evaluation.unmatched_predicted_ids)
         for evaluation in ordered_evaluations
     ]
     reference_counts = [
-        len(evaluation.matches) + len(evaluation.false_negative_ids)
+        len(evaluation.matches) + len(evaluation.unmatched_reference_ids)
         for evaluation in ordered_evaluations
     ]
 

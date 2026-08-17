@@ -1,4 +1,4 @@
-"""Read and write the few stable file formats used by this project.
+"""Write the few stable artifact formats used by this project.
 
 Detection events use a deliberately small CSV schema, while arbitrary summary
 records use JSON or explicitly declared CSV columns.  All conversions happen
@@ -53,32 +53,6 @@ def write_detections(events: Iterable[Detection], path: str | Path) -> None:
                     "source": event.source,
                 }
             )
-
-
-def read_detections(path: str | Path) -> tuple[Detection, ...]:
-    input_path = Path(path)
-    with input_path.open("r", encoding="utf-8", newline="") as handle:
-        reader = csv.DictReader(handle)
-        if tuple(reader.fieldnames or ()) != DETECTION_COLUMNS:
-            raise ValueError(
-                f"unexpected detection columns in {input_path}: {reader.fieldnames}"
-            )
-        events = tuple(
-            Detection(
-                sequence=row["sequence"],
-                frame=int(row["frame"]),
-                detection_id=int(row["detection_id"]),
-                x_px=float(row["x_px"]),
-                y_px=float(row["y_px"]),
-                area_px=int(row["area_px"]),
-                source=row["source"],
-            )
-            for row in reader
-        )
-    keys = [event.key for event in events]
-    if len(keys) != len(set(keys)):
-        raise ValueError("detection event keys must be unique within the table")
-    return events
 
 
 def write_rows(

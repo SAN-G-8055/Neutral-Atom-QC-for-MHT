@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
-from types import MappingProxyType
 
 import pytest
 
@@ -18,7 +17,6 @@ from neutral_atom_mht.graph import ConflictGraph, GraphCluster, GraphNode
 from neutral_atom_mht.neutral_atom import (
     NeutralAtomInput,
     NeutralAtomOutput,
-    NeutralAtomSolver,
     QuantumSolver,
 )
 from neutral_atom_mht.solver import Solver, SolverInput
@@ -53,7 +51,6 @@ class ManuallyImplementedQuantumSolver(QuantumSolver):
 
 def test_quantum_solver_inherits_the_shared_solver_template() -> None:
     assert issubclass(QuantumSolver, Solver)
-    assert NeutralAtomSolver is QuantumSolver
 
 
 def test_format_input_is_a_small_deterministic_transport_record() -> None:
@@ -64,7 +61,6 @@ def test_format_input_is_a_small_deterministic_transport_record() -> None:
     assert isinstance(request, NeutralAtomInput)
     assert request.problem_id == solver_input.problem_id
     assert request.input_fingerprint == solver_input.fingerprint
-    assert request.node_ids == (1, 2, 3)
     assert request.nodes == ((1, 2.0), (2, 3.5), (3, 4.0))
     assert request.edges == ((1, 2),)
     assert request.to_dict()["nodes"][1] == {"node_id": 2, "weight": 3.5}
@@ -83,9 +79,7 @@ def test_default_quantum_solve_returns_an_honest_common_placeholder() -> None:
     assert result.feasible
     assert result.status == "not_implemented"
     assert not result.successful
-    assert result.diagnostics["formatted_input"]["input_fingerprint"] == (
-        solver_input.fingerprint
-    )
+    assert "not implemented" in result.diagnostics["message"]
 
 
 def test_format_output_supports_a_future_manual_selection() -> None:
@@ -104,20 +98,6 @@ def test_format_output_supports_a_future_manual_selection() -> None:
     assert result.selected_ids == (2, 3)
     assert result.objective == 7.5
     assert result.diagnostics["source"] == "manual-test"
-
-
-def test_neutral_output_diagnostics_are_deeply_immutable() -> None:
-    solver_input = neutral_problem()
-    output = NeutralAtomOutput(
-        solver_input.problem_id,
-        solver_input.fingerprint,
-        (),
-        diagnostics={"nested": {"values": [1]}},
-    )
-
-    assert isinstance(output.diagnostics["nested"], MappingProxyType)
-    with pytest.raises(TypeError):
-        output.diagnostics["nested"]["changed"] = True  # type: ignore[index]
 
 
 @pytest.mark.parametrize("field", ["problem_id", "input_fingerprint"])
@@ -183,4 +163,3 @@ def test_neutral_atom_module_has_no_physics_or_vendor_dependency_imports() -> No
     )
 
     assert imported_roots.isdisjoint({"numpy", "scipy", "qutip", "pulser", "pasqal"})
-

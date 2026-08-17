@@ -12,7 +12,7 @@ from math import isfinite
 
 import numpy as np
 
-from .models import GatedAssociation, TrackState
+from .models import AssociationHypothesis, GatedAssociation, TrackState
 
 
 MEASUREMENT_MATRIX = np.array(
@@ -101,7 +101,6 @@ def predict_tracks(
                 state=tuple(state),
                 covariance=tuple(map(tuple, covariance)),
                 log_odds=track.log_odds,
-                posterior_probability=track.posterior_probability,
                 hits=track.hits,
                 misses=track.misses,
                 observation_history=track.observation_history,
@@ -138,12 +137,14 @@ def update_track_state(
 
 
 def filter_association_hypotheses(
-    hypotheses: tuple[object, ...],
+    hypotheses: tuple[AssociationHypothesis, ...],
     *,
     minimum_weight: float = 0.0,
-) -> tuple[object, ...]:
-    """Keep only candidates with evidence strong enough for MWIS selection."""
+) -> tuple[AssociationHypothesis, ...]:
+    """Keep candidates at or above the declared MWIS benefit threshold."""
 
+    if any(not isinstance(item, AssociationHypothesis) for item in hypotheses):
+        raise TypeError("hypotheses must contain only AssociationHypothesis objects")
     threshold = float(minimum_weight)
     if not isfinite(threshold) or threshold < 0.0:
         raise ValueError("minimum_weight must be finite and non-negative")

@@ -12,7 +12,6 @@ from collections.abc import Iterator
 from contextlib import closing
 from numbers import Integral
 from pathlib import Path, PurePosixPath
-import shutil
 import tempfile
 from urllib.request import Request, urlopen
 import zipfile
@@ -29,7 +28,7 @@ TRAINING_ARCHIVE_URL = (
     "https://data.celltrackingchallenge.net/training-datasets/PhC-C2DL-PSC.zip"
 )
 TRAINING_ARCHIVE_SIZE_BYTES = 145_227_316
-CANONICAL_EXTRACTED_SIZE_BYTES = 62_440_750
+CANONICAL_EXTRACTED_SIZE_BYTES = 62_415_220
 MAX_ARCHIVE_MEMBER_SIZE_BYTES = 1_000_000
 CANONICAL_RAW_SHA256 = "46c15979d995a6e8f3bbbed78652965c7575fba8f4d49da87493903e051b90fa"
 CANONICAL_GOLD_SHA256 = "4795100971222e24686c8dae8532c24d4c99d7401c08b418937b2968dd56f01b"
@@ -161,7 +160,6 @@ def prepare_sequence_01(output_root: str | Path) -> Path:
         expected_names = [
             *(f"{DATASET_NAME}/{SEQUENCE}/t{frame:03d}.tif" for frame in range(FRAME_COUNT)),
             *(f"{DATASET_NAME}/{SEQUENCE}_GT/TRA/man_track{frame:03d}.tif" for frame in range(FRAME_COUNT)),
-            f"{DATASET_NAME}/{SEQUENCE}_GT/TRA/man_track.txt",
         ]
         with zipfile.ZipFile(archive_path) as archive:
             available = set(archive.namelist())

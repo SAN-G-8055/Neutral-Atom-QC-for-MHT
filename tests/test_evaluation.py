@@ -7,7 +7,7 @@ import math
 import pytest
 
 from neutral_atom_mht.detection import Detection
-from neutral_atom_mht.evaluation import evaluate_frame, evaluate_sequence, match_detections
+from neutral_atom_mht.evaluation import evaluate_frame, evaluate_sequence
 
 
 def _detection(
@@ -31,7 +31,7 @@ def _detection(
 
 
 def test_matching_maximizes_cardinality_before_minimizing_distance() -> None:
-    # Three zero-distance pairs look cheaper to a naïve gated Hungarian match,
+    # Three zero-distance pairs look cheaper to a naive gated Hungarian match,
     # but the shifted chain is a valid four-pair assignment at the inclusive gate.
     predicted = [_detection(index, x) for index, x in enumerate((1, 2, 3, 4), 10)]
     reference = [
@@ -52,7 +52,7 @@ def test_matches_are_one_to_one_and_expose_audit_ids() -> None:
     predicted = [_detection(11, 0.0), _detection(12, 0.25), _detection(13, 10.0)]
     reference = [_detection(21, 0.0, source="gold")]
 
-    result = evaluate_frame(predicted, reference, gate_px=1.0)
+    result = evaluate_frame(predicted, reference, max_distance_px=1.0)
 
     assert result.true_positives == 1
     assert result.matches[0].predicted_id == 11
@@ -74,10 +74,9 @@ def test_sequence_evaluation_never_matches_across_frames() -> None:
     assert result.false_negatives == 1
     assert result.matches == ()
     assert [frame.frame for frame in result.frames] == [0, 1]
-    assert match_detections(predicted, reference, 1.0) == ()
 
 
-def test_sequence_reports_micro_primary_macro_per_frame_and_global_rmse() -> None:
+def test_sequence_reports_pooled_and_macro_scores_with_global_rmse() -> None:
     predicted = [
         _detection(1, 0.0, frame=0),
         _detection(2, 20.0, frame=0),
@@ -95,7 +94,6 @@ def test_sequence_reports_micro_primary_macro_per_frame_and_global_rmse() -> Non
     assert result.precision == pytest.approx(2 / 3)
     assert result.recall == pytest.approx(2 / 3)
     assert result.f1 == pytest.approx(2 / 3)
-    assert result.micro_precision == result.precision
     assert result.macro_precision == pytest.approx(0.75)
     assert result.macro_recall == pytest.approx(0.75)
     assert result.macro_f1 == pytest.approx(2 / 3)

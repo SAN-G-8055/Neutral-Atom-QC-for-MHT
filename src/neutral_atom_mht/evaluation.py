@@ -39,24 +39,6 @@ class Match:
     reference_id: int
     distance_px: float
 
-    @property
-    def predicted_detection_id(self) -> int:
-        """Explicit alias for consumers that use the full detection ID name."""
-
-        return self.predicted_id
-
-    @property
-    def prediction_id(self) -> int:
-        """Alias using the noun form of ``predicted_id``."""
-
-        return self.predicted_id
-
-    @property
-    def reference_detection_id(self) -> int:
-        """Explicit alias for consumers that use the full detection ID name."""
-
-        return self.reference_id
-
 
 @dataclass(frozen=True, slots=True)
 class FrameEvaluation:
@@ -77,48 +59,6 @@ class FrameEvaluation:
     matches: tuple[Match, ...]
     unmatched_predicted_ids: tuple[int, ...]
     unmatched_reference_ids: tuple[int, ...]
-
-    @property
-    def tp(self) -> int:
-        return self.true_positives
-
-    @property
-    def fp(self) -> int:
-        return self.false_positives
-
-    @property
-    def fn(self) -> int:
-        return self.false_negatives
-
-    @property
-    def true_positive(self) -> int:
-        return self.true_positives
-
-    @property
-    def false_positive(self) -> int:
-        return self.false_positives
-
-    @property
-    def false_negative(self) -> int:
-        return self.false_negatives
-
-    @property
-    def rmse_localization_px(self) -> float | None:
-        """Compatibility alias with the metric name in the previous project."""
-
-        return self.localization_rmse_px
-
-    @property
-    def false_positive_ids(self) -> tuple[int, ...]:
-        """IDs of unmatched predictions, named by their evaluated outcome."""
-
-        return self.unmatched_predicted_ids
-
-    @property
-    def false_negative_ids(self) -> tuple[int, ...]:
-        """IDs of unmatched references, named by their evaluated outcome."""
-
-        return self.unmatched_reference_ids
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,62 +82,14 @@ class SequenceEvaluation:
     localization_rmse_px: float | None
 
     @property
-    def frame_evaluations(self) -> tuple[FrameEvaluation, ...]:
-        return self.frames
-
-    @property
     def matches(self) -> tuple[Match, ...]:
         """All matches in deterministic frame/ID order for audit and plotting."""
 
         return tuple(match for frame in self.frames for match in frame.matches)
 
-    @property
-    def micro_precision(self) -> float:
-        return self.precision
 
-    @property
-    def micro_recall(self) -> float:
-        return self.recall
-
-    @property
-    def micro_f1(self) -> float:
-        return self.f1
-
-    @property
-    def tp(self) -> int:
-        return self.true_positives
-
-    @property
-    def fp(self) -> int:
-        return self.false_positives
-
-    @property
-    def fn(self) -> int:
-        return self.false_negatives
-
-    @property
-    def true_positive(self) -> int:
-        return self.true_positives
-
-    @property
-    def false_positive(self) -> int:
-        return self.false_positives
-
-    @property
-    def false_negative(self) -> int:
-        return self.false_negatives
-
-    @property
-    def rmse_localization_px(self) -> float | None:
-        return self.localization_rmse_px
-
-
-def _resolve_gate(max_distance_px: float | None, gate_px: float | None) -> float:
-    if max_distance_px is not None and gate_px is not None:
-        raise TypeError("Specify only one of max_distance_px and gate_px")
-    value = DEFAULT_MAX_DISTANCE_PX if max_distance_px is None and gate_px is None else (
-        gate_px if gate_px is not None else max_distance_px
-    )
+def _resolve_gate(max_distance_px: float | None) -> float:
+    value = DEFAULT_MAX_DISTANCE_PX if max_distance_px is None else max_distance_px
     try:
         gate = float(value)
     except (TypeError, ValueError) as error:
@@ -290,48 +182,11 @@ def _match_single_frame(
     return tuple(sorted(matches, key=lambda match: (match.predicted_id, match.reference_id)))
 
 
-def match_detections(
-    predicted: Iterable[Detection],
-    reference: Iterable[Detection],
-    max_distance_px: float | None = None,
-    *,
-    gate_px: float | None = None,
-) -> tuple[Match, ...]:
-    """Match detections without ever crossing sequence or frame boundaries.
-
-    Unlike :func:`evaluate_sequence`, this helper may receive several sequences;
-    each ``(sequence, frame)`` group is matched independently.
-    """
-
-    gate = _resolve_gate(max_distance_px, gate_px)
-    predicted_tuple = tuple(predicted)
-    reference_tuple = tuple(reference)
-    _validate_detections(predicted_tuple, "Predicted")
-    _validate_detections(reference_tuple, "Reference")
-
-    predicted_by_key: dict[tuple[str, int], list[Detection]] = defaultdict(list)
-    reference_by_key: dict[tuple[str, int], list[Detection]] = defaultdict(list)
-    for detection in predicted_tuple:
-        predicted_by_key[(detection.sequence, detection.frame)].append(detection)
-    for detection in reference_tuple:
-        reference_by_key[(detection.sequence, detection.frame)].append(detection)
-
-    matches: list[Match] = []
-    for key in sorted(predicted_by_key.keys() | reference_by_key.keys()):
-        predicted_frame = predicted_by_key[key]
-        reference_frame = reference_by_key[key]
-        _validate_unique_ids(predicted_frame, "Predicted")
-        _validate_unique_ids(reference_frame, "Reference")
-        matches.extend(_match_single_frame(predicted_frame, reference_frame, gate))
-    return tuple(matches)
-
-
 def evaluate_frame(
     predicted: Iterable[Detection],
     reference: Iterable[Detection],
     max_distance_px: float | None = None,
     *,
-    gate_px: float | None = None,
     sequence: str | None = None,
     frame: int | None = None,
 ) -> FrameEvaluation:
@@ -342,7 +197,7 @@ def evaluate_frame(
     and ``-1`` respectively.
     """
 
-    gate = _resolve_gate(max_distance_px, gate_px)
+    gate = _resolve_gate(max_distance_px)
     predicted_tuple = tuple(predicted)
     reference_tuple = tuple(reference)
     _validate_detections(predicted_tuple, "Predicted")
@@ -404,12 +259,11 @@ def evaluate_sequence(
     reference: Iterable[Detection],
     max_distance_px: float | None = None,
     *,
-    gate_px: float | None = None,
     sequence: str | None = None,
 ) -> SequenceEvaluation:
     """Evaluate all observed frames belonging to one sequence."""
 
-    gate = _resolve_gate(max_distance_px, gate_px)
+    gate = _resolve_gate(max_distance_px)
     predicted_tuple = tuple(predicted)
     reference_tuple = tuple(reference)
     _validate_detections(predicted_tuple, "Predicted")
@@ -487,5 +341,4 @@ __all__ = [
     "SequenceEvaluation",
     "evaluate_frame",
     "evaluate_sequence",
-    "match_detections",
 ]

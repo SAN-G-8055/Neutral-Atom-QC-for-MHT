@@ -15,7 +15,7 @@ global hypotheses.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, field
 from hashlib import sha256
 import json
 from math import isfinite
@@ -44,7 +44,6 @@ from .likelihood import (
     BayesianConfig,
     apply_bayesian_updates,
     calculate_association_hypotheses,
-    log_odds_to_probability,
     probability_to_log_odds,
 )
 from .models import (
@@ -62,25 +61,6 @@ from .solver import (
     validate_result,
 )
 
-
-PREPARATION_STAGES = (
-    "predict",
-    "gate",
-    "calculate_weights",
-    "filter_hypotheses",
-    "encode_graph",
-    "cluster",
-)
-"""The immutable preprocessing stages completed before a solver is chosen."""
-
-STAGE_ORDER = (
-    "observe",
-    *PREPARATION_STAGES,
-    "solve",
-    "bayesian_update",
-    "filter_tracks",
-)
-"""The conceptual order used when a raw image is processed end to end."""
 
 def _frame_number(value: object) -> int:
     """Normalize a frame number while rejecting booleans and fractions."""
@@ -192,7 +172,6 @@ class PreparedFrame:
     clusters: tuple[GraphCluster, ...]
     source_state_fingerprint: str
     observed_frame: ObservedFrame | None = None
-    stage_order: tuple[str, ...] = PREPARATION_STAGES
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "frame", _frame_number(self.frame))
@@ -224,10 +203,10 @@ class PreparedFrame:
             raise ValueError("observation IDs must be unique within a frame")
         if len(track_ids) != len(set(track_ids)):
             raise ValueError("predicted track IDs must be unique")
-        if encode_conflict_graph(self.hypotheses) != self.graph:
-            raise ValueError("graph must encode exactly the supplied hypotheses")
-        if cluster_graph(self.graph) != self.clusters:
-            raise ValueError("clusters must be the graph connected components")
+        if self.graph != encode_conflict_graph(self.hypotheses):
+            raise ValueError("graph must exactly encode the supplied hypotheses")
+        if self.clusters != cluster_graph(self.graph):
+            raise ValueError("clusters must be the graph's connected components")
         if self.observed_frame is not None:
             if not isinstance(self.observed_frame, ObservedFrame):
                 raise TypeError("observed_frame must be an ObservedFrame or None")
@@ -236,8 +215,6 @@ class PreparedFrame:
                 or self.observed_frame.observations != self.observations
             ):
                 raise ValueError("observed_frame must be the source of observations")
-        if self.stage_order != PREPARATION_STAGES:
-            raise ValueError("stage_order is fixed by the public preprocessing contract")
         fingerprint = self.source_state_fingerprint
         if (
             not isinstance(fingerprint, str)
@@ -268,7 +245,6 @@ class FrameResult:
     tracks: tuple[TrackState, ...]
     assigned_observation_ids: tuple[int, ...]
     solver_run: SolverRun
-    stage_order: tuple[str, ...] = STAGE_ORDER
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "frame", _frame_number(self.frame))
@@ -290,8 +266,6 @@ class FrameResult:
         object.__setattr__(self, "assigned_observation_ids", assigned)
         if not isinstance(self.solver_run, SolverRun):
             raise TypeError("solver_run must be a SolverRun")
-        if self.stage_order != STAGE_ORDER:
-            raise ValueError("stage_order is fixed by the public end-to-end contract")
 
 
 @dataclass(frozen=True, slots=True)
@@ -419,11 +393,9 @@ class HPC:
     ) -> tuple[AssociationHypothesis, ...]:
         """Remove local candidates below the declared solver-weight threshold."""
 
-        return tuple(
-            _filter_association_hypotheses(
-                tuple(hypotheses),
-                minimum_weight=self.config.minimum_hypothesis_weight,
-            )
+        return _filter_association_hypotheses(
+            tuple(hypotheses),
+            minimum_weight=self.config.minimum_hypothesis_weight,
         )
 
     def encode_graph(
@@ -479,7 +451,27 @@ class HPC:
         """Run each named preprocessing stage without changing retained state."""
 
         frame = _frame_number(frame)
-        supplied_observations = tuple(observations)
+        return self._prepare(tuple(observations), frame=frame, observed_frame=None)
+
+    def prepare_frame(self, image: np.ndarray, *, frame: int) -> PreparedFrame:
+        """Observe an image and prepare its immutable local association graph."""
+
+        observed = self.observe(image, frame=frame)
+        return self._prepare(
+            observed.observations,
+            frame=observed.frame,
+            observed_frame=observed,
+        )
+
+    def _prepare(
+        self,
+        supplied_observations: tuple[Observation, ...],
+        *,
+        frame: int,
+        observed_frame: ObservedFrame | None,
+    ) -> PreparedFrame:
+        """Compose the public preprocessing stages into one prepared frame."""
+
         if any(not isinstance(item, Observation) for item in supplied_observations):
             raise TypeError("observations must contain only Observation objects")
         ordered_observations = tuple(
@@ -506,14 +498,8 @@ class HPC:
             graph=graph,
             clusters=clusters,
             source_state_fingerprint=self._state_fingerprint(),
+            observed_frame=observed_frame,
         )
-
-    def prepare_frame(self, image: np.ndarray, *, frame: int) -> PreparedFrame:
-        """Observe an image and prepare its immutable local association graph."""
-
-        observed = self.observe(image, frame=frame)
-        prepared = self.prepare_observations(observed.observations, frame=observed.frame)
-        return replace(prepared, observed_frame=observed)
 
     def solve(self, prepared: PreparedFrame, solver: Solver) -> SolverRun:
         """Hand every graph component to one solver without changing HPC state."""
@@ -522,15 +508,7 @@ class HPC:
             raise TypeError("prepared must be a PreparedFrame")
         if not isinstance(solver, Solver):
             raise TypeError("solver must inherit from Solver")
-        solver_inputs = prepared.solver_inputs()
-        solver_run = solver.solve_all(solver_inputs)
-        for solver_input, result in zip(
-            solver_inputs, solver_run.results, strict=True
-        ):
-            validate_result(solver_input, result)
-            if not result.successful and result.selected_ids:
-                raise ValueError("an unsuccessful solver result cannot select hypotheses")
-        return solver_run
+        return solver.solve_all(prepared.solver_inputs())
 
     def compare(
         self,
@@ -539,16 +517,9 @@ class HPC:
     ) -> SolverComparison:
         """Run distinct solvers on byte-identical inputs without updating tracks."""
 
-        solvers = tuple(solvers)
-        if len(solvers) < 2:
-            raise ValueError("comparison requires at least two solvers")
-        if any(not isinstance(solver, Solver) for solver in solvers):
-            raise TypeError("every comparison item must inherit from Solver")
-        names = [solver.name for solver in solvers]
-        if len(names) != len(set(names)):
-            raise ValueError("solver names must be unique")
-        runs = tuple(self.solve(prepared, solver) for solver in solvers)
-        return SolverComparison.from_runs(runs)
+        return SolverComparison.from_runs(
+            self.solve(prepared, solver) for solver in solvers
+        )
 
     def bayesian_update(
         self,
@@ -668,7 +639,7 @@ class HPC:
         return SequenceResult(
             steps=tuple(steps),
             final_tracks=self._tracks,
-            solver_name=solver.name,
+            solver_name=solver.solver_name,
         )
 
     def _validate_run(self, prepared: PreparedFrame, solver_run: SolverRun) -> None:
@@ -703,7 +674,6 @@ class HPC:
             state=(observation.x, observation.y, 0.0, 0.0),
             covariance=tuple(map(tuple, covariance)),
             log_odds=log_odds,
-            posterior_probability=log_odds_to_probability(log_odds),
             hits=1,
             misses=0,
             observation_history=((observation.frame, observation.observation_id),),
@@ -739,9 +709,7 @@ __all__ = [
     "HPC",
     "HPCConfig",
     "ObservedFrame",
-    "PREPARATION_STAGES",
     "PreparedFrame",
-    "STAGE_ORDER",
     "SequenceResult",
     "hpc",
 ]

@@ -5,19 +5,15 @@ vertex whose weight is calculated before a solver is selected.  Two vertices
 conflict when they claim the same existing track or the same observation.  This
 module turns those records into a canonical representation, splits the graph
 into connected components, provides stable plotting coordinates, and saves a
-diagnostic figure.  It deliberately contains no solver or neutral-atom logic.
-
-Canonical ordering and a SHA-256 fingerprint make it possible to prove that two
-solver implementations received the same weighted problem.
+diagnostic figure. It deliberately contains no solver or neutral-atom logic;
+the solver boundary fingerprints each component after clustering.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from hashlib import sha256
 import itertools
-import json
 from math import ceil, cos, isfinite, pi, sin, sqrt
 from numbers import Integral, Real
 from pathlib import Path
@@ -38,18 +34,14 @@ def _finite_real(value: Any) -> bool:
 class GraphNode:
     """One weighted association hypothesis in a conflict graph.
 
-    ``node_id`` is the hypothesis identifier exposed to solvers.  A
-    ``posterior_probability`` is optional because the optimization requires the
-    log weight, while the probability is useful only for interpretation.
-    ``observation_id=None`` denotes a missed-detection hypothesis and therefore
-    does not create an observation conflict with other missed detections.
+    ``node_id`` is the hypothesis identifier exposed to solvers. Missed
+    detections are updated outside the graph and therefore have no graph node.
     """
 
     node_id: int
     weight: float
     track_id: int
-    observation_id: int | None
-    posterior_probability: float | None = None
+    observation_id: int
 
     def __post_init__(self) -> None:
         if not _integer(self.node_id) or self.node_id < 0:
@@ -58,27 +50,14 @@ class GraphNode:
             raise ValueError("weight must be a finite real number")
         if not _integer(self.track_id) or self.track_id < 0:
             raise ValueError("track_id must be a non-negative integer")
-        if self.observation_id is not None and (
-            not _integer(self.observation_id) or self.observation_id < 0
-        ):
-            raise ValueError("observation_id must be a non-negative integer or None")
-        if self.posterior_probability is not None:
-            if not _finite_real(self.posterior_probability):
-                raise ValueError("posterior_probability must be finite or None")
-            if not 0.0 <= float(self.posterior_probability) <= 1.0:
-                raise ValueError("posterior_probability must lie in [0, 1]")
-
+        if not _integer(self.observation_id) or self.observation_id < 0:
+            raise ValueError("observation_id must be a non-negative integer")
         object.__setattr__(self, "node_id", int(self.node_id))
         object.__setattr__(self, "weight", float(self.weight))
         object.__setattr__(self, "track_id", int(self.track_id))
-        if self.observation_id is not None:
-            object.__setattr__(self, "observation_id", int(self.observation_id))
-        if self.posterior_probability is not None:
-            object.__setattr__(
-                self, "posterior_probability", float(self.posterior_probability)
-            )
+        object.__setattr__(self, "observation_id", int(self.observation_id))
 
-    def to_dict(self) -> dict[str, int | float | None]:
+    def to_dict(self) -> dict[str, int | float]:
         """Return a JSON-safe representation with stable field names."""
 
         return {
@@ -86,7 +65,6 @@ class GraphNode:
             "weight": self.weight,
             "track_id": self.track_id,
             "observation_id": self.observation_id,
-            "posterior_probability": self.posterior_probability,
         }
 
 
@@ -157,49 +135,6 @@ class ConflictGraph:
                 adjacent.append(left)
         return tuple(sorted(adjacent))
 
-    def subgraph(self, node_ids: Iterable[int]) -> ConflictGraph:
-        """Return the vertex-induced subgraph for ``node_ids``."""
-
-        selected = tuple(node_ids)
-        if any(not _integer(node_id) for node_id in selected):
-            raise ValueError("subgraph node IDs must be integers")
-        selected = tuple(int(node_id) for node_id in selected)
-        if len(selected) != len(set(selected)):
-            raise ValueError("subgraph node IDs must be unique")
-        unknown = set(selected) - set(self.node_ids)
-        if unknown:
-            raise KeyError(f"unknown graph node IDs: {sorted(unknown)}")
-        selected_set = set(selected)
-        return ConflictGraph(
-            nodes=tuple(node for node in self.nodes if node.node_id in selected_set),
-            edges=tuple(
-                edge
-                for edge in self.edges
-                if edge[0] in selected_set and edge[1] in selected_set
-            ),
-        )
-
-    def to_dict(self) -> dict[str, list[Any]]:
-        """Return the canonical graph as JSON-safe built-in values."""
-
-        return {
-            "nodes": [node.to_dict() for node in self.nodes],
-            "edges": [[left, right] for left, right in self.edges],
-        }
-
-    @property
-    def fingerprint(self) -> str:
-        """SHA-256 digest of the canonical weighted graph representation."""
-
-        encoded = json.dumps(
-            self.to_dict(),
-            allow_nan=False,
-            ensure_ascii=True,
-            separators=(",", ":"),
-            sort_keys=True,
-        ).encode("utf-8")
-        return sha256(encoded).hexdigest()
-
 
 @dataclass(frozen=True, slots=True)
 class GraphCluster:
@@ -228,7 +163,7 @@ class AssociationLike(Protocol):
 
     hypothesis_id: int
     track_id: int
-    observation_id: int | None
+    observation_id: int
     weight: float
 
 
@@ -237,7 +172,7 @@ def encode_conflict_graph(associations: Iterable[AssociationLike]) -> ConflictGr
 
     Records are intentionally accepted by attributes instead of by a concrete
     class, keeping the graph boundary independent of the tracking implementation.
-    Vertices conflict when they use the same input track or the same non-null
+    Vertices conflict when they use the same input track or the same
     observation.
     """
 
@@ -259,9 +194,6 @@ def encode_conflict_graph(associations: Iterable[AssociationLike]) -> ConflictGr
                 weight=weight,
                 track_id=track_id,
                 observation_id=observation_id,
-                posterior_probability=getattr(
-                    association, "posterior_probability", None
-                ),
             )
         )
 
@@ -269,8 +201,7 @@ def encode_conflict_graph(associations: Iterable[AssociationLike]) -> ConflictGr
     by_observation: dict[int, list[int]] = {}
     for node in nodes:
         by_track.setdefault(node.track_id, []).append(node.node_id)
-        if node.observation_id is not None:
-            by_observation.setdefault(node.observation_id, []).append(node.node_id)
+        by_observation.setdefault(node.observation_id, []).append(node.node_id)
 
     edges: set[tuple[int, int]] = set()
     for members in itertools.chain(by_track.values(), by_observation.values()):

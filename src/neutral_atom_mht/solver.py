@@ -306,13 +306,6 @@ class SolverRun:
     def successful(self) -> bool:
         return all(result.successful for result in self.results)
 
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "solver_name": self.solver_name,
-            "successful": self.successful,
-            "results": [result.to_dict() for result in self.results],
-        }
-
 
 @dataclass(frozen=True, slots=True)
 class SolverComparison:
@@ -373,12 +366,6 @@ class Solver(ABC):
     def solver_name(self) -> str:
         """Return the stable name written into every result."""
 
-    @property
-    def name(self) -> str:
-        """Short convenience alias used in diagrams and interactive work."""
-
-        return self.solver_name
-
     @final
     def solve(self, solver_input: SolverInput) -> SolverResult:
         """Solve one component and construct the validated common result."""
@@ -393,9 +380,6 @@ class Solver(ABC):
             raise TypeError("_select() must return a SolverSelection")
 
         selected = set(selection.selected_ids)
-        unknown = selected - set(solver_input.cluster.node_ids)
-        if unknown:
-            raise ValueError(f"solver selected unknown node IDs: {sorted(unknown)}")
         feasible = not any(
             left in selected and right in selected for left, right in solver_input.edges
         )
@@ -436,26 +420,6 @@ class Solver(ABC):
         """Choose an independent set without constructing the public result."""
 
 
-def compare_solvers(
-    solver_inputs: Iterable[SolverInput],
-    solvers: Iterable[Solver],
-) -> SolverComparison:
-    """Run multiple solvers on the same immutable tuple of component inputs."""
-
-    inputs = tuple(solver_inputs)
-    selected_solvers = tuple(solvers)
-    if len(selected_solvers) < 2:
-        raise ValueError("comparison requires at least two solvers")
-    if any(not isinstance(solver, Solver) for solver in selected_solvers):
-        raise TypeError("solvers must contain only Solver instances")
-    names = tuple(solver.solver_name for solver in selected_solvers)
-    if len(names) != len(set(names)):
-        raise ValueError("comparison solver names must be unique")
-    return SolverComparison.from_runs(
-        solver.solve_all(inputs) for solver in selected_solvers
-    )
-
-
 __all__ = [
     "SCHEMA_VERSION",
     "SUCCESS_STATUSES",
@@ -465,6 +429,5 @@ __all__ = [
     "SolverResult",
     "SolverRun",
     "SolverSelection",
-    "compare_solvers",
     "validate_result",
 ]

@@ -1,11 +1,5 @@
 # Source datasets stay local. The official archive is 139 MB.
 /data/
-/Train Data/
-/Test Data/
-/Train Data.zip
-/Test Data.zip
-/PhC-C2DL-PSC.zip
-/Data Dictionary.pdf
 
 # Ad-hoc pipeline runs. Curated, reproducible results live under artifacts/.
 /outputs/

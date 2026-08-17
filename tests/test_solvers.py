@@ -19,10 +19,10 @@ from neutral_atom_mht.classical_solver import ClassicalSolver
 from neutral_atom_mht.graph import ConflictGraph, GraphCluster, GraphNode
 from neutral_atom_mht.solver import (
     Solver,
+    SolverComparison,
     SolverInput,
     SolverResult,
     SolverSelection,
-    compare_solvers,
     validate_result,
 )
 
@@ -175,7 +175,12 @@ def test_solve_all_and_comparison_keep_the_common_result_schema() -> None:
     classical = ClassicalSolver()
     duplicate = SameExactSolver()
 
-    comparison = compare_solvers((solver_input,), (classical, duplicate))
+    comparison = SolverComparison.from_runs(
+        (
+            classical.solve_all((solver_input,)),
+            duplicate.solve_all((solver_input,)),
+        )
+    )
 
     first = comparison.run("classical_exact")
     second = comparison.run("same_exact_algorithm")
@@ -185,4 +190,3 @@ def test_solve_all_and_comparison_keep_the_common_result_schema() -> None:
     assert first.selected_ids == second.selected_ids == (3, 6)
     assert first.successful and second.successful
     assert set(comparison.rows()[0]) == set(comparison.rows()[1])
-

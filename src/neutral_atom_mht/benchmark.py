@@ -14,6 +14,8 @@ from typing import Any
 
 import matplotlib
 import numpy as np
+
+from . import __version__
 from PIL import __version__ as pillow_version
 import scipy
 
@@ -302,7 +304,7 @@ def run_detection_benchmark(
         "overview_frames": list(overview_frames),
         "software": {
             "matplotlib": matplotlib.__version__,
-            "neutral_atom_mht": "0.1.0",
+            "neutral_atom_mht": __version__,
             "numpy": np.__version__,
             "operating_system": platform.platform(),
             "pillow": pillow_version,

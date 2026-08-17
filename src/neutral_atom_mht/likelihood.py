@@ -19,7 +19,6 @@ from .models import (
     GatedAssociation,
     Observation,
     TrackState,
-    _sigmoid_probability,
 )
 
 
@@ -46,13 +45,6 @@ def probability_to_log_odds(probability: float) -> float:
     if not isfinite(value) or not 0.0 < value < 1.0:
         raise ValueError("probability must lie strictly between 0 and 1")
     return log(value / (1.0 - value))
-
-
-def log_odds_to_probability(log_odds: float) -> float:
-    value = float(log_odds)
-    if not isfinite(value):
-        raise ValueError("log_odds must be finite")
-    return _sigmoid_probability(value)
 
 
 def hit_log_likelihood_ratio(
@@ -87,8 +79,9 @@ def calculate_association_hypotheses(
 
     Every unselected track receives the same missed-detection update after the
     solver returns.  That miss score is therefore the constant baseline.  A
-    vertex weight is the improvement ``hit_increment - miss_increment``;
-    non-positive improvements can never help the MWIS objective.
+    vertex weight is the improvement ``hit_increment - miss_increment``. This
+    stage calculates every gated candidate; the separate filtering stage owns
+    the decision to discard candidates that cannot improve the objective.
     """
 
     tracks = {track.track_id: track for track in predicted_tracks}
@@ -106,8 +99,6 @@ def calculate_association_hypotheses(
         increment = hit_log_likelihood_ratio(gate, config)
         posterior_log_odds = track.log_odds + increment
         weight = increment - miss_log_likelihood_ratio(config)
-        if weight <= 0.0:
-            continue
         hypotheses.append(
             AssociationHypothesis(
                 hypothesis_id=hypothesis_id,
@@ -116,7 +107,6 @@ def calculate_association_hypotheses(
                 observation_id=gate.observation_id,
                 log_likelihood_ratio=increment,
                 posterior_log_odds=posterior_log_odds,
-                posterior_probability=log_odds_to_probability(posterior_log_odds),
                 weight=weight,
                 gate=gate,
             )
@@ -172,15 +162,12 @@ def apply_bayesian_updates(
                     state=track.state,
                     covariance=track.covariance,
                     log_odds=log_odds,
-                    posterior_probability=log_odds_to_probability(log_odds),
                     hits=track.hits,
                     misses=track.misses + 1,
                     observation_history=track.observation_history,
                 )
             )
             continue
-        if hypothesis.observation_id not in observations_by_id:
-            raise ValueError("selected hypothesis references an unknown observation")
         state, covariance = update_track_state(track, hypothesis.gate)
         assigned_observations.add(hypothesis.observation_id)
         updated.append(
@@ -190,7 +177,6 @@ def apply_bayesian_updates(
                 state=state,
                 covariance=covariance,
                 log_odds=hypothesis.posterior_log_odds,
-                posterior_probability=hypothesis.posterior_probability,
                 hits=track.hits + 1,
                 misses=0,
                 observation_history=track.observation_history
