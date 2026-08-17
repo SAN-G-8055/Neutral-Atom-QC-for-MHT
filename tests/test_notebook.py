@@ -1,102 +1,141 @@
-"""Check that the root notebook is a readable, executable client of the package.
+"""Check the three-cell notebook against one real sequence-01 image.
 
-The notebook must demonstrate the public objects without hiding project logic
-inside notebook-defined functions or classes.  Its default path uses the
-implemented classical solver; the neutral-atom section may only format the
-same frozen problem and report the explicit placeholder status.
+The import cell must make a source checkout usable without an editable install.
+The remaining cells may configure and process one existing frame, but they must
+not hide synthetic data generation or a multi-frame demonstration.
 """
 
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 from nbclient import NotebookClient
 import nbformat
+import pytest
 
 
-NOTEBOOK = Path("user_notebook.ipynb")
+ROOT = Path(__file__).resolve().parents[1]
+NOTEBOOK = ROOT / "user_notebook.ipynb"
+EXAMPLE_FRAME = ROOT / "data" / "PhC-C2DL-PSC" / "01" / "t000.tif"
 
 
-def _notebook_text() -> tuple[dict[str, object], str, str]:
-    payload = json.loads(NOTEBOOK.read_text(encoding="utf-8"))
-    code = "\n".join(
-        "".join(cell["source"])
-        for cell in payload["cells"]
-        if cell["cell_type"] == "code"
-    )
-    text = "\n".join("".join(cell["source"]) for cell in payload["cells"])
-    return payload, code, text
+def _payload() -> dict[str, object]:
+    return json.loads(NOTEBOOK.read_text(encoding="utf-8"))
 
 
-def test_notebook_is_a_clean_root_level_object_oriented_interface() -> None:
-    payload, code, text = _notebook_text()
+def _cell_source(cell: dict[str, object]) -> str:
+    return "".join(cell["source"])
 
-    assert NOTEBOOK.parent == Path(".")
+
+def test_notebook_contains_only_import_config_and_run_cells() -> None:
+    payload = _payload()
+    cells = payload["cells"]
+
     assert payload["nbformat"] == 4
-    assert payload["cells"][0]["cell_type"] == "markdown"
-    assert "image" in "".join(payload["cells"][0]["source"]).lower()
-    assert "from neutral_atom_mht import" in code
-    assert "HPC(" in code
-    assert "HPCConfig(" in code
-    assert "ClassicalSolver(" in code
-    assert "QuantumSolver(" in code
-    assert "def " not in code
-    assert "class " not in code
-    assert ".observe(" in code
-    assert ".prepare_frame(" in code
-    assert ".solve(" in code
-    assert ".advance(" in code
-    assert ".run_sequence(" in code
-    assert all(
-        cell.get("outputs", []) == []
-        for cell in payload["cells"]
-        if cell["cell_type"] == "code"
+    assert len(cells) == 3
+    assert all(cell["cell_type"] == "code" for cell in cells)
+    assert [cell["id"] for cell in cells] == ["imports", "config", "run"]
+    assert all(cell.get("execution_count") is None for cell in cells)
+    assert all(cell.get("outputs") == [] for cell in cells)
+
+
+def test_import_cell_fixes_the_src_layout_before_package_import() -> None:
+    imports = _cell_source(_payload()["cells"][0])
+
+    assert 'project_root / "src"' in imports
+    assert "sys.path.insert" in imports
+    assert "from neutral_atom_mht import" in imports
+    assert imports.index("sys.path.insert") < imports.index("from neutral_atom_mht")
+    assert "ClassicalSolver" in imports
+    assert "HPC" in imports
+    assert "HPCConfig" in imports
+    assert "load_tiff" in imports
+    assert "raw_frame_path" in imports
+
+
+def test_config_and_run_use_exactly_one_existing_dataset_frame() -> None:
+    cells = _payload()["cells"]
+    config = _cell_source(cells[1])
+    run = _cell_source(cells[2])
+    all_code = "\n".join(_cell_source(cell) for cell in cells)
+
+    assert 'project_root / "data" / DATASET_NAME' in config
+    assert "frame = 0" in config
+    assert "raw_frame_path(dataset_root, frame)" in config
+    assert "HPCConfig()" in config
+    assert 'HPC(config, sequence="01")' in config
+    assert "ClassicalSolver()" in config
+    assert "load_tiff(frame_path)" in run
+    assert ".prepare_frame(" in run
+    assert ".solve(" in run
+    assert ".advance(" in run
+    assert "axis.scatter(" in run
+
+    forbidden = (
+        "np.mgrid",
+        "np.where",
+        "np.zeros",
+        "np.ones",
+        "centres",
+        "synthetic",
+        "run_sequence",
+        "QuantumSolver",
+        "format_input",
+        "def ",
+        "class ",
     )
-    assert "step by step" in text.lower()
+    assert all(token not in all_code for token in forbidden)
 
 
-def test_notebook_is_honest_about_the_quantum_placeholder() -> None:
-    _, code, text = _notebook_text()
-    lowered = text.lower()
-
-    assert ".format_input(" in code
-    assert "not_implemented" in lowered
-    assert "manual" in lowered
-    assert "qutip" not in lowered
-    assert "neutralatombackend" not in lowered
-    assert "neutral_atom_qutip" not in lowered
-
-
-def test_notebook_executes_end_to_end_without_persisting_outputs(
-    tmp_path: Path,
-    monkeypatch,
+def test_import_cell_executes_without_a_test_supplied_pythonpath(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    source_path = str((Path.cwd() / "src").resolve())
-    inherited = os.environ.get("PYTHONPATH")
-    monkeypatch.setenv(
-        "PYTHONPATH",
-        source_path if not inherited else source_path + os.pathsep + inherited,
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+    source = nbformat.read(NOTEBOOK, as_version=4)
+    import_only = nbformat.v4.new_notebook(
+        cells=[source.cells[0]],
+        metadata=source.metadata,
     )
+
+    executed = NotebookClient(
+        import_only,
+        timeout=60,
+        kernel_name="python3",
+        resources={"metadata": {"path": str(ROOT)}},
+    ).execute()
+
+    assert all(
+        output.get("output_type") != "error"
+        for output in executed.cells[0].get("outputs", [])
+    )
+
+
+@pytest.mark.skipif(
+    not EXAMPLE_FRAME.is_file(),
+    reason="the intentionally unversioned sequence-01 data are not installed",
+)
+def test_notebook_executes_one_real_frame_end_to_end(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("PYTHONPATH", raising=False)
     notebook = nbformat.read(NOTEBOOK, as_version=4)
-    graph_path = tmp_path / "user_conflict_graph.png"
-    visualize = next(cell for cell in notebook.cells if cell.get("id") == "visualize")
-    visualize.source = visualize.source.replace(
-        'project_root / "outputs/user_conflict_graph.png"',
-        f"Path({str(graph_path)!r})",
-    )
 
     executed = NotebookClient(
         notebook,
         timeout=120,
         kernel_name="python3",
-        resources={"metadata": {"path": str(Path.cwd())}},
+        resources={"metadata": {"path": str(ROOT)}},
     ).execute()
 
-    assert graph_path.is_file()
     assert all(
         output.get("output_type") != "error"
         for cell in executed.cells
         for output in cell.get("outputs", [])
+    )
+    run_outputs = executed.cells[2].get("outputs", [])
+    assert any("image/png" in output.get("data", {}) for output in run_outputs)
+    assert any(
+        "detections" in output.get("data", {}).get("text/plain", "")
+        for output in run_outputs
     )

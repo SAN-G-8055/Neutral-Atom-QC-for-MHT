@@ -50,8 +50,14 @@ python -m pytest
 Launch the root-level interface with:
 
 ```powershell
+cell-detect prepare-data
 jupyter lab user_notebook.ipynb
 ```
+
+The notebook has three cells—imports, configuration, and run—and processes
+the real sequence-01 frame `data/PhC-C2DL-PSC/01/t000.tif`. Its import cell
+adds the local `src/` directory explicitly, so it also works from an
+uninstalled source checkout when opened from the repository root.
 
 ## Object-oriented interface
 
@@ -98,7 +104,8 @@ For inspection, call `observe()`, `prepare_frame()`, `solve()`, and `advance()`
 separately. `prepare_frame()` is read-only and exposes its predictions, gates,
 weighted candidates, graph, clusters, and solver inputs. `step()` is the
 one-frame convenience method; `run_sequence()` repeats it over many images.
-The notebook demonstrates both styles without redefining package algorithms.
+The notebook keeps the interface deliberately smaller: it prepares, solves,
+and advances one real dataset frame without redefining package algorithms.
 
 ## Association model
 
@@ -250,7 +257,7 @@ human-gold SHA-256 is
 
 ```text
 README.md                         this complete project guide
-user_notebook.ipynb               executable user interface
+user_notebook.ipynb               three-cell real-frame user interface
 pyproject.toml                    package and test configuration
 requirements-detection-lock.txt  artifact reproduction environment
 artifacts/                        flat, versioned detection evidence
