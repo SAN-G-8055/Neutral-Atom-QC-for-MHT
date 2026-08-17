@@ -1,3 +1,5 @@
+"""Check that diagnostic figures are validated, saved, and closed cleanly."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

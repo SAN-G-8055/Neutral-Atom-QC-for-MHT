@@ -1,3 +1,5 @@
+"""Check lossless, schema-validated CSV and JSON project formats."""
+
 from __future__ import annotations
 
 import pytest

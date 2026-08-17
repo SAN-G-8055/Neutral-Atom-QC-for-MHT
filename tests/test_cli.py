@@ -1,3 +1,5 @@
+"""Check command-line parsing and safe, bounded output-path choices."""
+
 from pathlib import Path
 from argparse import ArgumentTypeError
 
@@ -23,7 +25,7 @@ def test_subset_default_cannot_overwrite_curated_full_run() -> None:
     full = _default_output_dir(tuple(range(300)))
     subset = _default_output_dir(tuple(range(10)))
 
-    assert full == Path("artifacts/detection/sequence_01")
+    assert full == Path("artifacts")
     assert subset == Path("outputs/detection/sequence_01_frames_000-009")
 
 

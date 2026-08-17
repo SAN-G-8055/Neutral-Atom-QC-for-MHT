@@ -1,4 +1,9 @@
-"""Kinematic validation gating, kept separate from filtering and clustering."""
+"""Decide which track-to-observation pairs are plausible before solving.
+
+Each candidate must pass an inclusive Mahalanobis-distance check and, when
+configured, a separate Euclidean innovation-distance check.  Gating only
+removes impossible pairs; it neither updates tracks nor builds graph edges.
+"""
 
 from __future__ import annotations
 

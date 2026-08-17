@@ -1,3 +1,0 @@
-# Exact optional simulator dependency used for the stage-two reference run.
-# Install requirements-detection-lock.txt first for the shared numeric stack.
-qutip==5.3.1

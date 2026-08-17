@@ -1,3 +1,5 @@
+"""Check that dataset preparation keeps only canonical sequence-01 inputs."""
+
 from __future__ import annotations
 
 from pathlib import Path

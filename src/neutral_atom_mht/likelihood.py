@@ -1,4 +1,10 @@
-"""One Bayesian log-odds update shared by every solver backend."""
+"""Calculate association weights and update track-existence probabilities.
+
+A hit compares the predicted Gaussian measurement density with uniform clutter;
+a miss uses the declared detection probability.  These calculations happen
+before and after solving in the HPC, so every solver sees the same weights and
+can never invent its own Bayesian update rule.
+"""
 
 from __future__ import annotations
 
@@ -77,7 +83,7 @@ def calculate_association_hypotheses(
     gated_associations: tuple[GatedAssociation, ...],
     config: BayesianConfig,
 ) -> tuple[AssociationHypothesis, ...]:
-    """Calculate local candidate weights before either backend is called.
+    """Calculate local candidate weights before either solver is called.
 
     Every unselected track receives the same missed-detection update after the
     solver returns.  That miss score is therefore the constant baseline.  A
@@ -125,7 +131,7 @@ def apply_bayesian_updates(
     selected_hypothesis_ids: tuple[int, ...],
     config: BayesianConfig,
 ) -> tuple[tuple[TrackState, ...], frozenset[int]]:
-    """Apply selected hits and the same miss rule after any backend returns."""
+    """Apply selected hits and the same miss rule after any solver returns."""
 
     tracks = {track.track_id: track for track in predicted_tracks}
     observations_by_id = {item.observation_id: item for item in observations}

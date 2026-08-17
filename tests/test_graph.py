@@ -1,3 +1,5 @@
+"""Check canonical graph encoding, clustering, fingerprints, and plotting."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

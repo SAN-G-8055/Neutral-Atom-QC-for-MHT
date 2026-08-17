@@ -1,11 +1,11 @@
-"""Immutable conflict graphs shared by classical and quantum solvers.
+"""Encode local association choices as an immutable conflict graph.
 
 The tracking front end produces association hypotheses.  Each hypothesis is a
 vertex whose weight is calculated before a solver is selected.  Two vertices
 conflict when they claim the same existing track or the same observation.  This
-module turns those records into a canonical graph representation, splits the
-graph into independent connected components, and provides a small diagnostic
-plot.  It deliberately contains no solver or neutral-atom physics.
+module turns those records into a canonical representation, splits the graph
+into connected components, provides stable plotting coordinates, and saves a
+diagnostic figure.  It deliberately contains no solver or neutral-atom logic.
 
 Canonical ordering and a SHA-256 fingerprint make it possible to prove that two
 solver implementations received the same weighted problem.

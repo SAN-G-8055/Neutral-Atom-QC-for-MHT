@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "neutral-atom-mht"
 version = "0.1.0"
-description = "Interpretable cell detection and neutral-atom multiple-hypothesis tracking"
+description = "Interpretable cell detection and solver-independent hypothesis processing"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -16,7 +16,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-quantum = ["qutip>=5.1,<6"]
 notebook = ["ipykernel>=6", "jupyterlab>=4"]
 test = ["ipykernel>=6", "nbclient>=0.10", "nbformat>=5.10", "pytest>=8.0"]
 
@@ -30,6 +29,3 @@ where = ["src"]
 addopts = "-ra"
 pythonpath = ["src"]
 testpaths = ["tests"]
-markers = [
-    "quantum: executes the optional QuTiP state-vector simulator",
-]

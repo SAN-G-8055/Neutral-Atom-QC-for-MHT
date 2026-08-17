@@ -1,3 +1,5 @@
+"""Check frame-safe matching and detection figures of merit."""
+
 from __future__ import annotations
 
 import math

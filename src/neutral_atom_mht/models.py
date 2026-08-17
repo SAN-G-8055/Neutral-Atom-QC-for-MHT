@@ -1,4 +1,4 @@
-"""Strict, backend-independent data models for local data association.
+"""Strict, solver-independent data models for local data association.
 
 The tracker deliberately keeps one state per physical track.  Association
 hypotheses are short-lived candidates for a single frame; they are never kept
@@ -258,8 +258,8 @@ def observations_from_detections(
 ) -> tuple[Observation, ...]:
     """Adapt strict detection events to tracking observations.
 
-    The adapter is intentionally structural so the tracking package does not
-    depend on the detector implementation.
+    The adapter is intentionally structural so the HPC can accept detector
+    events without coupling its state logic to the segmentation algorithm.
     """
 
     variance = _finite(variance_px2, "variance_px2")

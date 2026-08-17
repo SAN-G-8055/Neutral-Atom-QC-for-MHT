@@ -1,25 +1,24 @@
-"""Exact classical maximum-weight-independent-set backend."""
+"""Provide the small exact classical reference solver.
+
+The controller has already turned tracking choices into a weighted conflict
+graph before this class is called.  ``ClassicalSolver`` therefore does one job:
+find the maximum-weight independent set of each connected component.  Its
+explicit node limit makes the exponential cost visible, and it never rounds
+weights, substitutes a heuristic, or calls the neutral-atom adapter.
+"""
 
 from __future__ import annotations
 
 from functools import lru_cache
 from math import fsum
-from time import perf_counter
 
-from .base import SolverInput, SolverResult, validate_result
+from .solver import Solver, SolverInput, SolverSelection
 
 
-class ClassicalBackend:
-    """Solve one cluster exactly with deterministic dynamic programming.
+class ClassicalSolver(Solver):
+    """Solve a bounded conflict-graph component exactly and deterministically."""
 
-    The explicit size limit prevents an exponential computation from being
-    mistaken for a scalable classical baseline.  There is no silent heuristic
-    or quantum fallback.
-    """
-
-    name = "classical_exact"
-
-    def __init__(self, *, maximum_nodes: int = 30) -> None:
+    def __init__(self, maximum_nodes: int = 30) -> None:
         if (
             isinstance(maximum_nodes, bool)
             or not isinstance(maximum_nodes, int)
@@ -28,42 +27,42 @@ class ClassicalBackend:
             raise ValueError("maximum_nodes must be a positive integer")
         self.maximum_nodes = maximum_nodes
 
-    def solve(self, solver_input: SolverInput) -> SolverResult:
-        started = perf_counter()
+    @property
+    def solver_name(self) -> str:
+        return "classical_exact"
+
+    def _select(self, solver_input: SolverInput) -> SolverSelection:
         nodes = tuple(sorted(solver_input.nodes, key=lambda item: item.node_id))
         if len(nodes) > self.maximum_nodes:
-            return SolverResult(
-                problem_id=solver_input.problem_id,
-                input_fingerprint=solver_input.fingerprint,
-                backend=self.name,
-                selected_ids=(),
-                objective=0.0,
-                feasible=True,
+            return SolverSelection(
                 status="unsupported_size",
-                runtime_seconds=perf_counter() - started,
                 diagnostics={
                     "node_count": len(nodes),
                     "maximum_nodes": self.maximum_nodes,
                     "optimal": False,
                 },
             )
+
         node_ids = tuple(node.node_id for node in nodes)
         weights = {node.node_id: node.weight for node in nodes}
-        neighbours = {node_id: set() for node_id in node_ids}
+        neighbors = {node_id: set() for node_id in node_ids}
         for left, right in solver_input.edges:
-            neighbours[left].add(right)
-            neighbours[right].add(left)
+            neighbors[left].add(right)
+            neighbors[right].add(left)
 
         @lru_cache(maxsize=None)
         def optimize(remaining: frozenset[int]) -> tuple[float, tuple[int, ...]]:
             if not remaining:
                 return 0.0, ()
+
             vertex = min(remaining)
             excluded_weight, excluded = optimize(remaining - {vertex})
-            include_remaining = remaining - {vertex} - neighbours[vertex]
+
+            include_remaining = remaining - {vertex} - neighbors[vertex]
             _, suffix = optimize(include_remaining)
             included = tuple(sorted((vertex, *suffix)))
             included_weight = fsum(weights[node_id] for node_id in included)
+
             if included_weight > excluded_weight:
                 return included_weight, included
             if excluded_weight > included_weight:
@@ -71,16 +70,9 @@ class ClassicalBackend:
             return included_weight, min(included, excluded)
 
         _, selected = optimize(frozenset(node_ids))
-        objective = fsum(weights[node_id] for node_id in selected)
-        result = SolverResult(
-            problem_id=solver_input.problem_id,
-            input_fingerprint=solver_input.fingerprint,
-            backend=self.name,
+        return SolverSelection(
             selected_ids=selected,
-            objective=objective,
-            feasible=True,
             status="optimal",
-            runtime_seconds=perf_counter() - started,
             diagnostics={
                 "node_count": len(nodes),
                 "edge_count": len(solver_input.edges),
@@ -88,5 +80,6 @@ class ClassicalBackend:
                 "states_evaluated": optimize.cache_info().currsize,
             },
         )
-        validate_result(solver_input, result)
-        return result
+
+
+__all__ = ["ClassicalSolver"]

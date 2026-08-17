@@ -1,3 +1,5 @@
+"""Check strict observation and track models plus the detection-event adapter."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -5,7 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 
-from neutral_atom_mht.tracking.models import (
+from neutral_atom_mht.models import (
     Observation,
     TrackState,
     observations_from_detections,

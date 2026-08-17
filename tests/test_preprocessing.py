@@ -1,3 +1,5 @@
+"""Check each mathematical preprocessing stage independently from all solvers."""
+
 from __future__ import annotations
 
 from math import log
@@ -5,14 +7,14 @@ from math import log
 import numpy as np
 import pytest
 
-from neutral_atom_mht.tracking.filtering import (
+from neutral_atom_mht.filtering import (
     FilterConfig,
     filter_association_hypotheses,
     filter_tracks,
     predict_tracks,
 )
-from neutral_atom_mht.tracking.gating import GateConfig, gate_observations
-from neutral_atom_mht.tracking.likelihood import (
+from neutral_atom_mht.gating import GateConfig, gate_observations
+from neutral_atom_mht.likelihood import (
     BayesianConfig,
     apply_bayesian_updates,
     calculate_association_hypotheses,
@@ -20,7 +22,7 @@ from neutral_atom_mht.tracking.likelihood import (
     log_odds_to_probability,
     miss_log_likelihood_ratio,
 )
-from neutral_atom_mht.tracking.models import Observation, TrackState
+from neutral_atom_mht.models import Observation, TrackState
 
 
 def track(
@@ -118,7 +120,7 @@ def test_finite_extreme_log_odds_stay_inside_probability_interval() -> None:
     assert 0.0 < log_odds_to_probability(1_000.0) < 1.0
 
 
-def test_hypothesis_weights_are_calculated_once_before_backend_selection() -> None:
+def test_hypothesis_weights_are_calculated_once_before_solver_selection() -> None:
     predicted = predict_tracks(
         (track(),),
         frame=1,
@@ -145,7 +147,7 @@ def test_hypothesis_weights_are_calculated_once_before_backend_selection() -> No
     assert filter_association_hypotheses(hypotheses) == hypotheses
 
 
-def test_same_bayesian_update_accepts_any_backend_selected_id() -> None:
+def test_same_bayesian_update_accepts_any_solver_selected_id() -> None:
     config = BayesianConfig(clutter_spatial_density=1e-4)
     predicted = predict_tracks(
         (track(), track(2, state=(10.0, 0.0, 0.0, 0.0))),

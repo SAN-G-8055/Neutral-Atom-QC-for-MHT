@@ -1,4 +1,9 @@
-"""Small, explicit file formats used by the detection stage."""
+"""Read and write the few stable file formats used by this project.
+
+Detection events use a deliberately small CSV schema, while arbitrary summary
+records use JSON or explicitly declared CSV columns.  All conversions happen
+here so scientific modules work with typed objects instead of file details.
+"""
 
 from __future__ import annotations
 

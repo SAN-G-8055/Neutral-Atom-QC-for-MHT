@@ -1,4 +1,10 @@
-"""Command-line entry point for the cleaned detection stage."""
+"""Offer two small terminal commands for the retained microscopy dataset.
+
+``prepare-data`` downloads only sequence 01 and its human reference markers.
+``run`` detects cells, evaluates them, and writes the reproducible artifact
+tables and figures.  Tracking experiments belong in :class:`HPC` or the root
+notebook, so this command line remains focused on detection provenance.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +14,7 @@ import hashlib
 from pathlib import Path
 
 from .data import DATASET_NAME, FRAME_COUNT, prepare_sequence_01
-from .pipeline import run_detection_benchmark
+from .benchmark import run_detection_benchmark
 
 
 def _parse_frames(value: str) -> tuple[int, ...]:
@@ -42,7 +48,7 @@ def _parse_frames(value: str) -> tuple[int, ...]:
 def _default_output_dir(frames: tuple[int, ...]) -> Path:
     complete = tuple(range(FRAME_COUNT))
     if frames == complete:
-        return Path("artifacts") / "detection" / "sequence_01"
+        return Path("artifacts")
     continuous = frames == tuple(range(frames[0], frames[-1] + 1))
     if continuous:
         label = f"{frames[0]:03d}-{frames[-1]:03d}"

@@ -1,3 +1,5 @@
+"""Check deterministic cell segmentation and strict detection-event records."""
+
 from __future__ import annotations
 
 import json

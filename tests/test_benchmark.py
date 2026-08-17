@@ -1,9 +1,11 @@
+"""Check end-to-end detection benchmark orchestration, provenance, and integrity."""
+
 from __future__ import annotations
 
 import numpy as np
 import pytest
 
-from neutral_atom_mht.pipeline import _validate_frame_arrays, run_detection_benchmark
+from neutral_atom_mht.benchmark import _validate_frame_arrays, run_detection_benchmark
 
 
 def test_raw_and_gold_must_share_one_coordinate_domain() -> None:

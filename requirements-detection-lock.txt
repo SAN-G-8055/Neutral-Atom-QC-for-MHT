@@ -1,4 +1,4 @@
-# Exact environment used to generate artifacts/detection/sequence_01.
+# Exact environment used to generate the versioned files in artifacts/.
 colorama==0.4.6
 contourpy==1.3.3
 cycler==0.12.1

@@ -1,4 +1,9 @@
-"""Kalman prediction/update and explicit post-update track filtering."""
+"""Predict, correct, and retain object tracks with transparent Kalman math.
+
+The functions here know nothing about graph solvers.  They move a track state
+forward in time, apply one chosen observation, or enforce declared retention
+limits.  :class:`HPC` exposes these operations as step-by-step methods.
+"""
 
 from __future__ import annotations
 
