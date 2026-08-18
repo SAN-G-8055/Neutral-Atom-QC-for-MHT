@@ -1,7 +1,7 @@
 """Expose the project's small object-oriented API from one flat facade.
 
 The facade exposes the objects needed to configure the HPC, its solvers, and
-synthetic datasets. Detection, evaluation, graph, and preprocessing details
+synthetic datasets. Detection, graph, and preprocessing details
 remain in their focused modules instead of becoming compatibility aliases.
 """
 

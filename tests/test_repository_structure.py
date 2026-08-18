@@ -35,20 +35,6 @@ def test_every_flat_source_module_is_packaged() -> None:
     assert declared == present
 
 
-def test_curated_outputs_are_directly_under_benchmark_data() -> None:
-    expected = {
-        "detections.csv",
-        "detections_overview.png",
-        "gold_events.csv",
-        "matches.csv",
-        "per_frame_metrics.csv",
-        "performance_over_time.png",
-        "summary.json",
-    }
-
-    assert {path.name for path in (ROOT / "data" / "benchmark").iterdir()} == expected
-
-
 def test_every_python_file_starts_with_a_natural_language_description() -> None:
     code_files = sorted(SOURCE.glob("*.py")) + sorted((ROOT / "tests").glob("*.py"))
     assert code_files

@@ -1,8 +1,5 @@
-# Source and generated datasets stay local. Curated benchmark evidence is
-# versioned under data/benchmark/.
+# Source and generated datasets stay local.
 /data/*
-!/data/benchmark/
-!/data/benchmark/**
 
 # Ad-hoc pipeline runs.
 /outputs/

@@ -1,8 +1,8 @@
 """Generate deterministic synthetic tracking images in the local CTC layout.
 
 The generator owns scene motion and rendering only.  Detection, graph
-construction, solver benchmarking, visualization, and archive management stay
-with their existing modules and workflows.
+construction, tracking, and visualization stay with their existing modules
+and workflows.
 """
 
 from __future__ import annotations

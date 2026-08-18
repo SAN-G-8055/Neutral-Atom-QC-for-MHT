@@ -24,12 +24,9 @@ test = ["ipykernel>=6", "nbclient>=0.10", "nbformat>=5.10", "pytest>=8.0"]
 package-dir = {"" = "src"}
 py-modules = [
     "_version",
-    "artifact_io",
-    "benchmark",
     "cell_data",
     "classical_solver",
     "detection",
-    "evaluation",
     "filtering",
     "gating",
     "graph",
@@ -40,7 +37,6 @@ py-modules = [
     "neutral_atom_mht",
     "solver",
     "synthetic_data",
-    "visualization",
 ]
 
 [tool.pytest.ini_options]
