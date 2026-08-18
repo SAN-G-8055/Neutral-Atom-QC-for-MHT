@@ -14,11 +14,11 @@ from typing import Any
 import matplotlib
 import numpy as np
 
-from . import __version__
+from _version import __version__
 from PIL import __version__ as pillow_version
 import scipy
 
-from .data import (
+from cell_data import (
     DATASET_NAME,
     FRAME_COUNT,
     IMAGE_SHAPE,
@@ -28,15 +28,15 @@ from .data import (
     raw_frame_path,
     verify_sequence_01,
 )
-from .detection import (
+from detection import (
     Detection,
     DetectionConfig,
     detect_frame,
     detections_from_label_image,
 )
-from .evaluation import DEFAULT_MAX_DISTANCE_PX, FrameEvaluation, SequenceEvaluation, evaluate_frame, evaluate_sequence
-from .io import write_detections, write_json, write_rows
-from .visualization import save_detection_overview, save_per_frame_performance
+from evaluation import DEFAULT_MAX_DISTANCE_PX, FrameEvaluation, SequenceEvaluation, evaluate_frame, evaluate_sequence
+from artifact_io import write_detections, write_json, write_rows
+from visualization import save_detection_overview, save_per_frame_performance
 
 
 OVERVIEW_FRAMES = (0, 60, 120, 180, 240, 299)

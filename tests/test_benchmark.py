@@ -8,8 +8,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from neutral_atom_mht.benchmark import _validate_frame_arrays, run_detection_benchmark
-from neutral_atom_mht.data import DATASET_NAME, raw_frame_path
+from benchmark import _validate_frame_arrays, run_detection_benchmark
+from cell_data import DATASET_NAME, raw_frame_path
 
 
 def test_raw_and_gold_must_share_one_coordinate_domain() -> None:

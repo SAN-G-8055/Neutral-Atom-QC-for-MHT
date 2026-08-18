@@ -6,7 +6,7 @@ import json
 import numpy as np
 import pytest
 
-from neutral_atom_mht.detection import (
+from detection import (
     Detection,
     DetectionConfig,
     detect_frame,

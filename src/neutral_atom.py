@@ -7,7 +7,7 @@ to the original Pulser experiment. Pulser itself is loaded only by the concrete
 runner, so the package and its classical solver have no quantum requirement.
 
 Plotting is deliberately absent. Immutable program and run artifacts can be
-passed to :mod:`neutral_atom_mht.neutral_atom_visualization` when a caller
+passed to :mod:`neutral_atom_visualization` when a caller
 explicitly wants figures.
 """
 
@@ -16,6 +16,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from math import fsum, isfinite
+import os
+from pathlib import Path
+import sys
 from threading import Lock
 from typing import Protocol
 
@@ -23,8 +26,8 @@ import numpy as np
 from scipy.optimize import minimize
 from scipy.spatial.distance import euclidean, pdist, squareform
 
-from .graph import GraphCluster, cluster_graph
-from .solver import SUCCESS_STATUSES, Solver, SolverInput, SolverSelection
+from graph import GraphCluster, cluster_graph
+from solver import SUCCESS_STATUSES, Solver, SolverInput, SolverSelection
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +40,7 @@ class NeutralAtomConfig:
     pulse_duration_ns: int = 40_000
     interaction_scale: float = 10.0
     maximum_component_nodes: int = 16
+    qutip_cache_dir: Path = Path("data") / ".cache" / "qutip"
 
     def __post_init__(self) -> None:
         if not 0 <= self.random_seed <= 2**32 - 1:
@@ -236,8 +240,11 @@ class PulserQutipRunner:
     def execute(self, component: NeutralAtomComponent) -> NeutralAtomRun:
         """Embed, program, and emulate one non-trivial connected component."""
 
-        runtime = self._runtime()
         with self._random_lock:
+            # QuTiP chooses its coefficient cache while importing. Keep the
+            # short working-directory change in the same process-wide critical
+            # section as the backend execution.
+            runtime = self._runtime()
             random_state = np.random.get_state()
             try:
                 np.random.seed(self.config.random_seed)
@@ -397,7 +404,7 @@ class PulserQutipRunner:
 
         if self.backend_factory is None:
             try:
-                import pulser_simulation
+                backend_factory = self._load_qutip_backend()
             except ModuleNotFoundError as exc:
                 if exc.name != "pulser_simulation":
                     raise
@@ -405,11 +412,79 @@ class PulserQutipRunner:
                     "pulser-simulation is required for neutral-atom simulation; "
                     'install ".[quantum]"'
                 ) from exc
-            backend_factory = pulser_simulation.QutipBackendV2
         else:
             backend_factory = self.backend_factory
         device = self.device if self.device is not None else pulser.MockDevice
         return pulser, backend_factory, device
+
+    def _load_qutip_backend(self) -> object:
+        """Import QuTiP through Pulser with its cache below ``data/.cache``."""
+
+        original_directory = Path.cwd().resolve()
+        cache_root = Path(self.config.qutip_cache_dir)
+        if not cache_root.is_absolute():
+            cache_root = original_directory / cache_root
+        cache_root = cache_root.resolve()
+        cache_root.mkdir(parents=True, exist_ok=True)
+
+        previous_coefficient_root = self._active_coefficient_root(original_directory)
+        os.chdir(cache_root)
+        try:
+            import pulser_simulation
+
+            self._redirect_qutip_cache(cache_root)
+        finally:
+            os.chdir(original_directory)
+
+        self._remove_empty_root_cache(previous_coefficient_root, original_directory)
+        return pulser_simulation.QutipBackendV2
+
+    @staticmethod
+    def _active_coefficient_root(base_directory: Path) -> Path | None:
+        """Resolve an already-imported QuTiP cache before redirecting it."""
+
+        qutip = sys.modules.get("qutip")
+        if qutip is None:
+            return None
+        coefficient_root = Path(str(qutip.settings.coeffroot))
+        if not coefficient_root.is_absolute():
+            coefficient_root = base_directory / coefficient_root
+        return coefficient_root.resolve()
+
+    @staticmethod
+    def _redirect_qutip_cache(cache_root: Path) -> None:
+        """Replace QuTiP's relative fallback with one stable absolute path."""
+
+        qutip = sys.modules.get("qutip")
+        if qutip is None:
+            return
+        previous_entry = str(qutip.settings.coeffroot)
+        coefficient_name = Path(previous_entry).name
+        if not coefficient_name.startswith("qutip_coeffs_"):
+            coefficient_name = "qutip_coeffs"
+        coefficient_root = cache_root / coefficient_name
+        coefficient_root.mkdir(exist_ok=True)
+        qutip.settings.tmproot = str(cache_root)
+        qutip.settings.coeffroot = str(coefficient_root)
+        if previous_entry != str(coefficient_root) and previous_entry in sys.path:
+            sys.path.remove(previous_entry)
+
+    @staticmethod
+    def _remove_empty_root_cache(
+        coefficient_root: Path | None,
+        repository_root: Path,
+    ) -> None:
+        """Remove only QuTiP's empty, generated working-directory fallback."""
+
+        if (
+            coefficient_root is not None
+            and coefficient_root.parent == repository_root
+            and coefficient_root.name.startswith("qutip_coeffs_")
+        ):
+            try:
+                coefficient_root.rmdir()
+            except OSError:
+                pass
 
 
 class QuantumSolver(Solver):

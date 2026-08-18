@@ -8,7 +8,7 @@ import numpy as np
 from PIL import Image
 import pytest
 
-from neutral_atom_mht.data import (
+from cell_data import (
     DATASET_NAME,
     CANONICAL_GOLD_SHA256,
     CANONICAL_RAW_SHA256,
@@ -19,8 +19,8 @@ from neutral_atom_mht.data import (
     raw_frame_path,
     verify_sequence_01,
 )
-from neutral_atom_mht.detection import detect_frame, detections_from_label_image
-from neutral_atom_mht.evaluation import evaluate_frame
+from detection import detect_frame, detections_from_label_image
+from evaluation import evaluate_frame
 
 
 def test_sequence_01_path_convention() -> None:

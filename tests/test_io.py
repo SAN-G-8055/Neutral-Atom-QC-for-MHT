@@ -6,8 +6,8 @@ import csv
 
 import pytest
 
-from neutral_atom_mht.detection import Detection
-from neutral_atom_mht.io import DETECTION_COLUMNS, write_detections
+from detection import Detection
+from artifact_io import DETECTION_COLUMNS, write_detections
 
 
 def test_detection_csv_uses_the_declared_lossless_minimal_schema(tmp_path) -> None:

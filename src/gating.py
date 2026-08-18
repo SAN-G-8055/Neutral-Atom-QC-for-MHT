@@ -12,8 +12,8 @@ from math import isfinite
 
 import numpy as np
 
-from .filtering import MEASUREMENT_MATRIX
-from .models import GatedAssociation, Observation, TrackState
+from filtering import MEASUREMENT_MATRIX
+from models import GatedAssociation, Observation, TrackState
 
 
 @dataclass(frozen=True, slots=True)

@@ -23,7 +23,7 @@ import math
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-from .detection import Detection
+from detection import Detection
 
 
 DEFAULT_MAX_DISTANCE_PX = 10.0

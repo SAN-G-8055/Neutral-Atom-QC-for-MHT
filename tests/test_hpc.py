@@ -8,11 +8,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from neutral_atom_mht.classical_solver import ClassicalSolver
-from neutral_atom_mht.detection import DetectionConfig
-from neutral_atom_mht.filtering import FilterConfig
-from neutral_atom_mht.gating import GateConfig
-from neutral_atom_mht.hpc import (
+from classical_solver import ClassicalSolver
+from detection import DetectionConfig
+from filtering import FilterConfig
+from gating import GateConfig
+from hpc import (
     HPC,
     HPCConfig,
     ObservedFrame,
@@ -20,9 +20,9 @@ from neutral_atom_mht.hpc import (
     SequenceResult,
     hpc,
 )
-from neutral_atom_mht.likelihood import BayesianConfig
-from neutral_atom_mht.models import Observation
-from neutral_atom_mht.neutral_atom import QuantumSolver
+from likelihood import BayesianConfig
+from models import Observation
+from neutral_atom import QuantumSolver
 
 
 def configured_hpc() -> HPC:

@@ -15,7 +15,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .detection import Detection
+from detection import Detection
 
 
 DETECTION_COLUMNS = (

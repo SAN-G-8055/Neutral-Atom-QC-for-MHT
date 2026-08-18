@@ -1,8 +1,15 @@
-# Source datasets stay local. The official archive is 139 MB.
-/data/
+# Source and generated datasets stay local. Curated benchmark evidence is
+# versioned under data/benchmark/.
+/data/*
+!/data/benchmark/
+!/data/benchmark/**
 
-# Ad-hoc pipeline runs. Curated, reproducible results live under artifacts/.
+# Ad-hoc pipeline runs.
 /outputs/
+
+# QuTiP falls back to the working directory when its normal user cache is not
+# writable. The solver redirects it to data/.cache/, but ignore the fallback.
+/qutip_coeffs_*/
 
 # Python
 __pycache__/

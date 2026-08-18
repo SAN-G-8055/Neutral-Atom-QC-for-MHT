@@ -12,9 +12,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from neutral_atom_mht.detection import Detection
-from neutral_atom_mht.evaluation import Match, evaluate_frame
-from neutral_atom_mht.visualization import (
+from detection import Detection
+from evaluation import Match, evaluate_frame
+from visualization import (
     save_detection_overview,
     save_per_frame_performance,
 )

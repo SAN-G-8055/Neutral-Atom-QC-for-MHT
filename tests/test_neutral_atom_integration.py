@@ -14,9 +14,9 @@ import os
 
 import pytest
 
-from neutral_atom_mht.graph import ConflictGraph, GraphNode
-from neutral_atom_mht.neutral_atom import QuantumSolver
-from neutral_atom_mht.solver import SolverInput, validate_result
+from graph import ConflictGraph, GraphNode
+from neutral_atom import QuantumSolver
+from solver import SolverInput, validate_result
 
 
 @pytest.mark.skipif(

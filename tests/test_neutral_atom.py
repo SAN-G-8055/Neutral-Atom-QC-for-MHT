@@ -13,14 +13,14 @@ import json
 import numpy as np
 import pytest
 
-from neutral_atom_mht.graph import ConflictGraph, GraphNode
-from neutral_atom_mht.neutral_atom import (
+from graph import ConflictGraph, GraphNode
+from neutral_atom import (
     NeutralAtomComponent,
     NeutralAtomConfig,
     NeutralAtomRun,
     QuantumSolver,
 )
-from neutral_atom_mht.solver import Solver, SolverInput, validate_result
+from solver import Solver, SolverInput, validate_result
 
 
 class ScriptedRunner:

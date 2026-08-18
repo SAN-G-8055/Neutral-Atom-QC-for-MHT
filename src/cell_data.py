@@ -72,7 +72,7 @@ def paired_frame_paths(dataset_root: str | Path) -> Iterator[tuple[int, Path, Pa
 def verify_sequence_01(dataset_root: str | Path) -> tuple[str, str]:
     """Validate completeness and byte-for-byte canonical source fingerprints."""
 
-    from .io import sha256_files
+    from artifact_io import sha256_files
 
     pairs = tuple(paired_frame_paths(dataset_root))
     raw_hash = sha256_files(raw for _, raw, _ in pairs)

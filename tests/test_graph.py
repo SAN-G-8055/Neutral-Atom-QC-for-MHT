@@ -11,7 +11,7 @@ from PIL import Image
 
 matplotlib.use("Agg")
 
-from neutral_atom_mht.graph import (  # noqa: E402
+from graph import (  # noqa: E402
     ConflictGraph,
     GraphCluster,
     GraphNode,

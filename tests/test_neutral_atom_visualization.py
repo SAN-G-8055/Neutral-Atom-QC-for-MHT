@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 import pytest
 
-from neutral_atom_mht.neutral_atom_visualization import NeutralAtomVisualizer
+from neutral_atom_visualization import NeutralAtomVisualizer
 
 
 class FakeDrawable:

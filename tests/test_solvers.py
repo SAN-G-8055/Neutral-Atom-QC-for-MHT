@@ -15,9 +15,9 @@ from types import MappingProxyType
 
 import pytest
 
-from neutral_atom_mht.classical_solver import ClassicalSolver
-from neutral_atom_mht.graph import ConflictGraph, GraphNode
-from neutral_atom_mht.solver import (
+from classical_solver import ClassicalSolver
+from graph import ConflictGraph, GraphNode
+from solver import (
     Solver,
     SolverComparison,
     SolverInput,

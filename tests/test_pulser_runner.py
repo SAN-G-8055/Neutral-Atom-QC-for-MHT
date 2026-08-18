@@ -8,20 +8,20 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import numpy as np
 import pytest
 
-import neutral_atom_mht.neutral_atom as neutral_atom_module
-from neutral_atom_mht.graph import ConflictGraph, GraphNode
-from neutral_atom_mht.neutral_atom import (
+import neutral_atom as neutral_atom_module
+from graph import ConflictGraph, GraphNode
+from neutral_atom import (
     NeutralAtomComponent,
     NeutralAtomConfig,
     PulserQutipRunner,
     QuantumSolver,
 )
-from neutral_atom_mht.solver import SolverInput
+from solver import SolverInput
 
 
 def path_problem() -> SolverInput:
@@ -95,6 +95,39 @@ def test_default_solver_reports_the_missing_optional_dependency(
     assert result.feasible
     assert result.diagnostics["failed_component_id"] == 0
     assert 'install ".[quantum]"' in result.diagnostics["message"]
+
+
+def test_qutip_cache_is_redirected_below_data(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    fallback = tmp_path / "qutip_coeffs_1.3"
+    fallback.mkdir()
+
+    settings = SimpleNamespace(tmproot=".", coeffroot=fallback.name)
+    qutip = ModuleType("qutip")
+    qutip.settings = settings  # type: ignore[attr-defined]
+    pulser = ModuleType("pulser")
+    pulser.MockDevice = object()  # type: ignore[attr-defined]
+    simulation = ModuleType("pulser_simulation")
+    simulation.QutipBackendV2 = object()  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "qutip", qutip)
+    monkeypatch.setitem(sys.modules, "pulser", pulser)
+    monkeypatch.setitem(sys.modules, "pulser_simulation", simulation)
+    monkeypatch.syspath_prepend(fallback.name)
+
+    runner = PulserQutipRunner()
+    _, backend_factory, _ = runner._runtime()
+
+    expected_root = (tmp_path / "data" / ".cache" / "qutip").resolve()
+    expected_coefficients = expected_root / fallback.name
+    assert backend_factory is simulation.QutipBackendV2  # type: ignore[attr-defined]
+    assert Path(settings.tmproot) == expected_root
+    assert Path(settings.coeffroot) == expected_coefficients
+    assert expected_coefficients.is_dir()
+    assert not fallback.exists()
+    assert Path.cwd() == tmp_path
 
 
 class Drawable:

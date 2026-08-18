@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 
-from neutral_atom_mht.models import (
+from models import (
     Observation,
     TrackState,
     observations_from_detections,

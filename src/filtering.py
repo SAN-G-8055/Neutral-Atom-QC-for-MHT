@@ -12,7 +12,7 @@ from math import isfinite
 
 import numpy as np
 
-from .models import AssociationHypothesis, GatedAssociation, TrackState
+from models import AssociationHypothesis, GatedAssociation, TrackState
 
 
 MEASUREMENT_MATRIX = np.array(

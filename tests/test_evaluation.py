@@ -6,8 +6,8 @@ import math
 
 import pytest
 
-from neutral_atom_mht.detection import Detection
-from neutral_atom_mht.evaluation import evaluate_frame, evaluate_sequence
+from detection import Detection
+from evaluation import evaluate_frame, evaluate_sequence
 
 
 def _detection(

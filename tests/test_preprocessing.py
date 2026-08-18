@@ -7,21 +7,21 @@ from math import log
 import numpy as np
 import pytest
 
-from neutral_atom_mht.filtering import (
+from filtering import (
     FilterConfig,
     filter_association_hypotheses,
     filter_tracks,
     predict_tracks,
 )
-from neutral_atom_mht.gating import GateConfig, gate_observations
-from neutral_atom_mht.likelihood import (
+from gating import GateConfig, gate_observations
+from likelihood import (
     BayesianConfig,
     apply_bayesian_updates,
     calculate_association_hypotheses,
     hit_log_likelihood_ratio,
     miss_log_likelihood_ratio,
 )
-from neutral_atom_mht.models import Observation, TrackState
+from models import Observation, TrackState
 
 
 def track(

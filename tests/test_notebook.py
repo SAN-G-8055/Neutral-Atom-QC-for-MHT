@@ -40,6 +40,7 @@ def test_notebook_uses_the_checkout_and_one_real_frame() -> None:
     imports, config, run = map(_source, _payload()["cells"])
 
     assert imports.index("sys.path.insert") < imports.index("from neutral_atom_mht")
+    assert "from cell_data import DATASET_NAME" in imports
     assert 'project_root / "src"' in imports
     assert 'project_root / "data" / DATASET_NAME' in config
     assert "frame = 0" in config

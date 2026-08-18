@@ -2,7 +2,7 @@
 
 ``HPC`` is the one stateful object a user needs for the tracking workflow.  It
 turns an image into observations, exposes every preprocessing stage as a named
-method, hands an immutable weighted graph to a :class:`~neutral_atom_mht.solver.Solver`,
+method, hands an immutable weighted graph to a :class:`~solver.Solver`,
 and applies the returned choices through the same Bayesian update regardless of
 which solver produced them.  A full image sequence repeats that visible
 ``HPC -> Solver -> HPC`` exchange one frame at a time.
@@ -24,34 +24,34 @@ from pathlib import Path
 
 import numpy as np
 
-from .detection import DetectionConfig, DetectionResult, detect_frame
-from .filtering import (
+from detection import DetectionConfig, DetectionResult, detect_frame
+from filtering import (
     FilterConfig,
     filter_association_hypotheses as _filter_association_hypotheses,
     filter_tracks as _filter_tracks,
     predict_tracks as _predict_tracks,
 )
-from .gating import GateConfig, gate_observations
-from .graph import (
+from gating import GateConfig, gate_observations
+from graph import (
     ConflictGraph,
     encode_conflict_graph,
     logical_layout,
     save_graph_visualization,
 )
-from .likelihood import (
+from likelihood import (
     BayesianConfig,
     apply_bayesian_updates,
     calculate_association_hypotheses,
     probability_to_log_odds,
 )
-from .models import (
+from models import (
     AssociationHypothesis,
     GatedAssociation,
     Observation,
     TrackState,
     observations_from_detections,
 )
-from .solver import (
+from solver import (
     Solver,
     SolverComparison,
     SolverInput,

@@ -19,7 +19,7 @@ from time import perf_counter
 from types import MappingProxyType
 from typing import Any, Mapping, final
 
-from .graph import ConflictGraph, GraphNode
+from graph import ConflictGraph, GraphNode
 
 
 SCHEMA_VERSION = "3.0"

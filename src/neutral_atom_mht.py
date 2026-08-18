@@ -1,20 +1,20 @@
-"""Expose the project's small object-oriented API from one import location.
+"""Expose the project's small object-oriented API from one flat facade.
 
-The root package exposes only the objects needed to configure the HPC and its
-solvers. Detection, evaluation, graph, and preprocessing details remain in
-their focused modules instead of becoming permanent compatibility aliases.
+The facade exposes the objects needed to configure the HPC, its solvers, and
+synthetic datasets. Detection, evaluation, graph, and preprocessing details
+remain in their focused modules instead of becoming compatibility aliases.
 """
 
-__version__ = "0.1.0"
+from _version import __version__
 
-from .classical_solver import ClassicalSolver
-from .hpc import (
+from classical_solver import ClassicalSolver
+from hpc import (
     HPC,
     HPCConfig,
     hpc,
 )
-from .models import Observation, TrackState
-from .neutral_atom import (
+from models import Observation, TrackState
+from neutral_atom import (
     NeutralAtomComponent,
     NeutralAtomConfig,
     NeutralAtomDependencyError,
@@ -29,20 +29,27 @@ from .neutral_atom import (
     PulserQutipRunner,
     QuantumSolver,
 )
-from .neutral_atom_visualization import (
+from neutral_atom_visualization import (
     NeutralAtomSequenceFigures,
     NeutralAtomVisualizer,
 )
-from .solver import (
+from solver import (
     Solver,
     SolverComparison,
     SolverInput,
     SolverResult,
     SolverSelection,
 )
+from synthetic_data import (
+    DEFAULT_SYNTHETIC_DATA_ROOT,
+    SyntheticDataConfig,
+    SyntheticDataGenerator,
+    SyntheticDataset,
+)
 
 __all__ = [
     "ClassicalSolver",
+    "DEFAULT_SYNTHETIC_DATA_ROOT",
     "HPC",
     "HPCConfig",
     "NeutralAtomComponent",
@@ -66,6 +73,9 @@ __all__ = [
     "SolverInput",
     "SolverResult",
     "SolverSelection",
+    "SyntheticDataConfig",
+    "SyntheticDataGenerator",
+    "SyntheticDataset",
     "TrackState",
     "hpc",
 ]

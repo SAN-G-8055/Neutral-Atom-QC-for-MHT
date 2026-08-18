@@ -12,8 +12,8 @@ from __future__ import annotations
 from functools import lru_cache
 from math import fsum
 
-from .graph import cluster_graph
-from .solver import Solver, SolverInput, SolverSelection
+from graph import cluster_graph
+from solver import Solver, SolverInput, SolverSelection
 
 
 class ClassicalSolver(Solver):
