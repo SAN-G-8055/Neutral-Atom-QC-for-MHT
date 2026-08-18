@@ -88,6 +88,18 @@ class SyntheticDataConfig:
         return 1.5 + 6.0 * self.noise
 
 
+# Small deterministic scene validated against the real quantum simulator.
+QUANTUM_DEMO_DATA_CONFIG = SyntheticDataConfig(
+    noise=0.1,
+    frame_count=8,
+    object_count=4,
+    seed=0,
+    dataset_name="SYN-MHT-QUANTUM-v1",
+    sequence="01",
+    image_shape=(256, 320),
+)
+
+
 @dataclass(frozen=True, slots=True)
 class SyntheticDataset:
     """Paths and loaders for one generated synthetic sequence."""
@@ -443,6 +455,7 @@ class SyntheticDataGenerator:
 
 __all__ = [
     "DEFAULT_SYNTHETIC_DATA_ROOT",
+    "QUANTUM_DEMO_DATA_CONFIG",
     "SyntheticDataConfig",
     "SyntheticDataGenerator",
     "SyntheticDataset",

@@ -11,19 +11,19 @@ adiabatic implementation of the same contract.
 ## Quick start
 
 ```powershell
-python -m pip install -e ".[test,notebook]"
+python -m pip install -e ".[test,notebook,quantum]"
 jupyter lab user_notebook.ipynb
 ```
 
-**Run all cells — the notebook works out of the box.** It uses the real
-sequence-01 frames when `data/PhC-C2DL-PSC/` is present, and otherwise
-generates a local synthetic sequence automatically. In the notebook you can:
+**Run all cells — the notebook works out of the box.** It generates a small,
+quantum-friendly synthetic sequence by default. Set
+`USE_QUANTUM_DEMO_DATA = False` to prefer installed real sequence-01 frames,
+with synthetic data retained as the fallback. In the notebook you can:
 
 - run one frame end to end (detect, associate, plot the result);
-- switch `solver = ClassicalSolver(maximum_component_nodes=60)` to
-  `solver = QuantumSolver()` after
-  installing the quantum extra (below);
-- set `RUN_MANY_FRAMES = True` in the last cell to track over a sequence.
+- run three frames with `QuantumSolver(maximum_component_nodes=8)` by default;
+- switch to the commented `ClassicalSolver` line for larger datasets;
+- raise `MANY_FRAME_COUNT` up to the preset's eight available frames.
 
 To use the quantum solver, install the optional Pulser simulation stack:
 
@@ -159,19 +159,32 @@ Tracking Challenge. Source images are local and ignored by Git; place them as
 `data/PhC-C2DL-PSC/01/t000.tif ... t299.tif` to have the notebook use them.
 
 Synthetic Cell Tracking Challenge-style sequences are generated through the
-same package interface, and the notebook falls back to them automatically:
+same package interface. The notebook uses `QUANTUM_DEMO_DATA_CONFIG`, a
+versioned preset with 8 frames, 4 objects, noise `0.1`, seed `0`, and
+`256 x 320` images. It retains a real non-clique simulation while keeping
+every observed conflict component at five nodes or fewer.
+
+Custom sequences can use the same generator:
 
 ```python
 from neutral_atom_mht import SyntheticDataConfig, SyntheticDataGenerator
 
-config = SyntheticDataConfig(noise=0.4, frame_count=20, object_count=30, seed=7)
+config = SyntheticDataConfig(
+    noise=0.4,
+    frame_count=20,
+    object_count=30,
+    seed=7,
+    dataset_name="SYN-MHT-CUSTOM-v1",
+)
 dataset = SyntheticDataGenerator(config).generate()
 image = dataset.load_frame(0)
 ```
 
-By default this creates `data/synthetic/SYN-MHT/`, with raw images in `01/`
-and tracking labels in `01_GT/TRA/`. Generated datasets are local and ignored
-by Git; generation refuses to overwrite a nonempty dataset directory.
+The notebook preset creates `data/synthetic/SYN-MHT-QUANTUM-v1/`, with raw
+images in `01/` and tracking labels in `01_GT/TRA/`. Generated datasets are
+local and ignored by Git; generation refuses to overwrite a nonempty dataset
+directory. Use a new versioned `dataset_name` after changing any generation
+parameter so an older cached sequence cannot be mistaken for the new one.
 
 ## Project layout
 

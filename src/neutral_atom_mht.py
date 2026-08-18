@@ -37,6 +37,7 @@ from solver import (
 )
 from synthetic_data import (
     DEFAULT_SYNTHETIC_DATA_ROOT,
+    QUANTUM_DEMO_DATA_CONFIG,
     SyntheticDataConfig,
     SyntheticDataGenerator,
     SyntheticDataset,
@@ -59,6 +60,7 @@ __all__ = [
     "NeutralAtomVisualizer",
     "Observation",
     "PulserQutipRunner",
+    "QUANTUM_DEMO_DATA_CONFIG",
     "QuantumSolver",
     "Solver",
     "SolverComparison",

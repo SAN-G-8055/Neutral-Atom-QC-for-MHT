@@ -6,7 +6,12 @@ import numpy as np
 import pytest
 
 from neutral_atom_mht import (
+    ClassicalSolver,
     DEFAULT_SYNTHETIC_DATA_ROOT,
+    HPC,
+    HPCConfig,
+    QUANTUM_DEMO_DATA_CONFIG,
+    QuantumSolver,
     SyntheticDataConfig,
     SyntheticDataGenerator,
 )
@@ -67,6 +72,48 @@ def test_same_seed_produces_identical_images_and_labels(tmp_path: Path) -> None:
             first.load_tracking_labels(frame),
             second.load_tracking_labels(frame),
         )
+
+
+def test_quantum_demo_preset_is_small_versioned_and_nontrivial(
+    tmp_path: Path,
+) -> None:
+    config = QUANTUM_DEMO_DATA_CONFIG
+
+    assert config == SyntheticDataConfig(
+        noise=0.1,
+        frame_count=8,
+        object_count=4,
+        seed=0,
+        dataset_name="SYN-MHT-QUANTUM-v1",
+        sequence="01",
+        image_shape=(256, 320),
+    )
+
+    dataset = SyntheticDataGenerator(config).generate(tmp_path)
+    tracker = HPC(HPCConfig(), sequence=config.sequence)
+    classical = ClassicalSolver(maximum_component_nodes=8)
+    quantum = QuantumSolver(maximum_component_nodes=8)
+    simulated_shapes: list[tuple[int, int]] = []
+    maximum_component_size = 0
+
+    for frame in range(config.frame_count):
+        prepared = tracker.prepare_frame(dataset.load_frame(frame), frame=frame)
+        components = quantum.prepare(prepared.solver_input())
+        maximum_component_size = max(
+            (
+                maximum_component_size,
+                *(len(component.node_ids) for component in components),
+            )
+        )
+        simulated_shapes.extend(
+            (len(component.node_ids), len(component.edges))
+            for component in components
+            if not quantum._is_clique(component)
+        )
+        tracker.advance(prepared, tracker.solve(prepared, classical))
+
+    assert maximum_component_size == 5
+    assert simulated_shapes == [(5, 5)]
 
 
 def test_existing_dataset_is_not_partially_overwritten(tmp_path: Path) -> None:
