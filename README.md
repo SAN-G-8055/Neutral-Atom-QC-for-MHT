@@ -78,12 +78,19 @@ Launch the root-level interface with:
 jupyter lab user_notebook.ipynb
 ```
 
-The notebook has three cells—imports, configuration, and run—and processes
-the real sequence-01 frame `data/PhC-C2DL-PSC/01/t000.tif`. Its import cell
-adds the local `src/` directory explicitly, so it also works from an
+The notebook has five cells—imports, optional synthetic generation,
+configuration, a single-frame run, and an optional multi-frame run. It uses the
+real sequence-01 frame `data/PhC-C2DL-PSC/01/t000.tif` by default. Its import
+cell adds the local `src/` directory explicitly, so it also works from an
 uninstalled source checkout when opened from the repository root. The project
-assumes the sequence TIFFs are already present under `data/PhC-C2DL-PSC/`;
-there is no downloader or command-line interface.
+assumes real sequence TIFFs are already present under
+`data/PhC-C2DL-PSC/`; there is no downloader or command-line interface.
+
+Set `RUN_MANY_FRAMES = True` in the final cell to process the configured number
+of consecutive images and plot active tracks and assigned observations. The
+configuration cell also includes a commented `solver = QuantumSolver()` switch.
+Install the quantum extra and begin with one frame before attempting a longer
+simulated sequence.
 
 ## Object-oriented interface
 
@@ -292,6 +299,12 @@ rendering, and CTC-style serialization; detection, association, benchmarking,
 and visualization remain separate responsibilities. There is no synthetic-data
 command-line interface.
 
+The notebook exposes the same workflow without generating files during an
+ordinary Run All. Set `GENERATE_SYNTHETIC_DATA = True` in its optional cell and
+run that cell once, then set `USE_SYNTHETIC_DATA = True` in the configuration
+cell. Switch generation back off after the dataset has been created because
+existing nonempty sequences are intentionally not overwritten.
+
 ## Cell detection and gold-standard evaluation
 
 The repository uses only **PhC-C2DL-PSC sequence 01** from the Cell Tracking
@@ -370,7 +383,7 @@ human-gold SHA-256 is
 
 ```text
 README.md                         this complete project guide
-user_notebook.ipynb               three-cell real-frame user interface
+user_notebook.ipynb               five-cell real/synthetic sequence interface
 pyproject.toml                    package and test configuration
 requirements-detection-lock.txt  benchmark reproduction environment
 data/
