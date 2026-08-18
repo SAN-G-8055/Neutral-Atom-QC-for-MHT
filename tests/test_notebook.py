@@ -90,7 +90,7 @@ def test_notebook_falls_back_to_synthetic_data_automatically() -> None:
     assert "sequence = synthetic_dataset.config.sequence" in config
     assert "raw_frame_path(dataset_root, frame)" in config
     assert "HPC(config, sequence=sequence)" in config
-    assert "solver = ClassicalSolver()" in config
+    assert "solver = ClassicalSolver(maximum_component_nodes=60)" in config
     assert "# solver = QuantumSolver()" in config
     assert "load_tiff(frame_path)" in run
     assert "{dataset_label} sequence {sequence}" in run

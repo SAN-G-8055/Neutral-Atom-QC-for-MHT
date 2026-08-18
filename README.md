@@ -20,7 +20,8 @@ sequence-01 frames when `data/PhC-C2DL-PSC/` is present, and otherwise
 generates a local synthetic sequence automatically. In the notebook you can:
 
 - run one frame end to end (detect, associate, plot the result);
-- switch `solver = ClassicalSolver()` to `solver = QuantumSolver()` after
+- switch `solver = ClassicalSolver(maximum_component_nodes=60)` to
+  `solver = QuantumSolver()` after
   installing the quantum extra (below);
 - set `RUN_MANY_FRAMES = True` in the last cell to track over a sequence.
 
