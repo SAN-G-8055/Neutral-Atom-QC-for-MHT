@@ -51,8 +51,6 @@ def test_sequence_01_frame_shape_is_fixed() -> None:
     ("frames", "message"),
     [
         ((), "at least one frame"),
-        ((True,), "frames must be integers"),
-        ((1.9,), "frames must be integers"),
         ((-1,), "frames must lie"),
         ((300,), "frames must lie"),
     ],

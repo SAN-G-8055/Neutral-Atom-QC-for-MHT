@@ -9,24 +9,22 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import exp, isfinite, nextafter
-from numbers import Integral, Real
 
 import numpy as np
 
 
-def _integer(value: object, name: str, *, minimum: int = 0) -> int:
-    if isinstance(value, bool) or not isinstance(value, Integral):
-        raise ValueError(f"{name} must be an integer")
+def _integer(value: int, name: str, *, minimum: int = 0) -> int:
     result = int(value)
     if result < minimum:
         raise ValueError(f"{name} must be at least {minimum}")
     return result
 
 
-def _finite(value: object, name: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, Real) or not isfinite(float(value)):
+def _finite(value: float, name: str) -> float:
+    result = float(value)
+    if not isfinite(result):
         raise ValueError(f"{name} must be a finite real number")
-    return float(value)
+    return result
 
 
 def _sigmoid_probability(log_odds: float) -> float:

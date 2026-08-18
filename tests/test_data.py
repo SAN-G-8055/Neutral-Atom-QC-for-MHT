@@ -1,9 +1,11 @@
-"""Check that dataset preparation keeps only canonical sequence-01 inputs."""
+"""Check local sequence-01 path, loading, and verification utilities."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
+from PIL import Image
 import pytest
 
 from neutral_atom_mht.data import (
@@ -11,7 +13,6 @@ from neutral_atom_mht.data import (
     CANONICAL_GOLD_SHA256,
     CANONICAL_RAW_SHA256,
     FRAME_COUNT,
-    _safe_archive_target,
     gold_tracking_path,
     load_tiff,
     paired_frame_paths,
@@ -42,24 +43,15 @@ def test_incomplete_sequence_fails_before_processing(tmp_path) -> None:
         tuple(paired_frame_paths(tmp_path))
 
 
-@pytest.mark.parametrize(
-    "member",
-    (
-        "../escape.tif",
-        "/absolute/escape.tif",
-        r"PhC-C2DL-PSC/01/..\..\escape.tif",
-        r"PhC-C2DL-PSC/01/C:\escape.tif",
-    ),
-)
-def test_archive_members_cannot_escape_staging(tmp_path, member: str) -> None:
-    with pytest.raises(ValueError, match="unsafe|escapes"):
-        _safe_archive_target(tmp_path, member)
+def test_load_tiff_preserves_local_pixel_values(tmp_path) -> None:
+    pixels = np.array([[0, 17], [255, 42]], dtype=np.uint8)
+    image_path = tmp_path / "frame.tif"
+    Image.fromarray(pixels).save(image_path)
 
+    loaded = load_tiff(image_path)
 
-def test_archive_target_accepts_the_exact_dataset_shape(tmp_path) -> None:
-    target = _safe_archive_target(tmp_path, "PhC-C2DL-PSC/01/t000.tif")
-
-    assert target == (tmp_path / "PhC-C2DL-PSC" / "01" / "t000.tif").resolve()
+    assert np.array_equal(loaded, pixels)
+    assert loaded.dtype == pixels.dtype
 
 
 LOCAL_DATASET = Path(__file__).resolve().parents[1] / "data" / DATASET_NAME

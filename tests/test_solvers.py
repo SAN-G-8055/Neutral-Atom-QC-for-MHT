@@ -16,7 +16,7 @@ from types import MappingProxyType
 import pytest
 
 from neutral_atom_mht.classical_solver import ClassicalSolver
-from neutral_atom_mht.graph import ConflictGraph, GraphCluster, GraphNode
+from neutral_atom_mht.graph import ConflictGraph, GraphNode
 from neutral_atom_mht.solver import (
     Solver,
     SolverComparison,
@@ -47,7 +47,6 @@ def worked_problem() -> SolverInput:
         problem_id="worked-example",
         frame=7,
         graph=graph,
-        cluster=GraphCluster(0, graph.node_ids),
     )
 
 
@@ -83,6 +82,8 @@ def test_solver_input_fingerprint_is_canonical_and_json_safe() -> None:
     assert first.fingerprint == second.fingerprint
     serialized = json.loads(json.dumps(first.to_dict()))
     assert serialized["fingerprint"] == first.fingerprint
+    assert [node["node_id"] for node in serialized["nodes"]] == [2, 3, 4, 5, 6]
+    assert "cluster_id" not in serialized
     with pytest.raises(ValueError, match="fingerprint"):
         replace(first, fingerprint="0" * 64)
 
@@ -109,7 +110,7 @@ def test_classical_solver_does_not_round_or_apply_a_tie_tolerance() -> None:
         ),
         edges=((0, 1),),
     )
-    solver_input = SolverInput("sub-picoweight", 1, graph, GraphCluster(0, (0, 1)))
+    solver_input = SolverInput("sub-picoweight", 1, graph)
 
     result = ClassicalSolver().solve(solver_input)
 
@@ -124,7 +125,7 @@ def test_base_template_computes_the_objective_with_fsum() -> None:
             for index, weight in enumerate((1e16, 1.0, -1e16, 2.0))
         )
     )
-    solver_input = SolverInput("sum", 1, graph, GraphCluster(0, graph.node_ids))
+    solver_input = SolverInput("sum", 1, graph)
 
     result = ClassicalSolver().solve(solver_input)
 
@@ -141,6 +142,28 @@ def test_size_limit_is_an_explicit_unsuccessful_result() -> None:
     assert result.feasible
     assert not result.successful
     assert result.diagnostics["optimal"] is False
+
+
+def test_classical_solver_clusters_one_full_frame_input_internally() -> None:
+    graph = ConflictGraph(
+        nodes=(
+            GraphNode(0, 1.0, 0, 0),
+            GraphNode(1, 3.0, 0, 1),
+            GraphNode(2, 5.0, 2, 2),
+            GraphNode(3, 2.0, 3, 2),
+            GraphNode(4, 4.0, 4, 4),
+        ),
+        edges=((0, 1), (2, 3)),
+    )
+    solver_input = SolverInput("disconnected-frame", 3, graph)
+
+    result = ClassicalSolver(maximum_nodes=2).solve(solver_input)
+
+    assert result.successful
+    assert result.selected_ids == (1, 2, 4)
+    assert result.objective == 12.0
+    assert result.diagnostics["component_count"] == 3
+    assert len(solver_input.nodes) == 5 > 2
 
 
 def test_result_diagnostics_are_deeply_immutable_and_export_detached() -> None:
@@ -170,23 +193,22 @@ def test_template_rejects_a_concrete_solver_that_selects_conflicting_nodes() -> 
         ConflictingSolver().solve(worked_problem())
 
 
-def test_solve_all_and_comparison_keep_the_common_result_schema() -> None:
+def test_comparison_keeps_one_common_result_schema_for_one_input() -> None:
     solver_input = worked_problem()
     classical = ClassicalSolver()
     duplicate = SameExactSolver()
 
-    comparison = SolverComparison.from_runs(
+    comparison = SolverComparison.from_results(
         (
-            classical.solve_all((solver_input,)),
-            duplicate.solve_all((solver_input,)),
+            classical.solve(solver_input),
+            duplicate.solve(solver_input),
         )
     )
 
-    first = comparison.run("classical_exact")
-    second = comparison.run("same_exact_algorithm")
-    assert first.input_fingerprints == second.input_fingerprints == (
-        solver_input.fingerprint,
-    )
+    first = comparison.result("classical_exact")
+    second = comparison.result("same_exact_algorithm")
+    assert comparison.input_fingerprint == solver_input.fingerprint
+    assert first.input_fingerprint == second.input_fingerprint == solver_input.fingerprint
     assert first.selected_ids == second.selected_ids == (3, 6)
     assert first.successful and second.successful
     assert set(comparison.rows()[0]) == set(comparison.rows()[1])

@@ -19,7 +19,7 @@ from dataclasses import asdict, dataclass, field
 from hashlib import sha256
 import json
 from math import isfinite
-from numbers import Integral
+from operator import index
 from pathlib import Path
 
 import numpy as np
@@ -34,8 +34,6 @@ from .filtering import (
 from .gating import GateConfig, gate_observations
 from .graph import (
     ConflictGraph,
-    GraphCluster,
-    cluster_graph,
     encode_conflict_graph,
     logical_layout,
     save_graph_visualization,
@@ -57,17 +55,21 @@ from .solver import (
     Solver,
     SolverComparison,
     SolverInput,
-    SolverRun,
+    SolverResult,
     validate_result,
 )
 
 
-def _frame_number(value: object) -> int:
-    """Normalize a frame number while rejecting booleans and fractions."""
+def _frame_number(value: int) -> int:
+    """Normalize an integer-like, non-negative frame number."""
 
-    if isinstance(value, bool) or not isinstance(value, Integral) or value < 0:
+    try:
+        frame = index(value)
+    except TypeError as exc:
+        raise ValueError("frame must be a non-negative integer") from exc
+    if frame < 0:
         raise ValueError("frame must be a non-negative integer")
-    return int(value)
+    return frame
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,16 +91,6 @@ class HPCConfig:
     bayesian: BayesianConfig = field(default_factory=BayesianConfig)
 
     def __post_init__(self) -> None:
-        expected_types = {
-            "detection": DetectionConfig,
-            "filtering": FilterConfig,
-            "gating": GateConfig,
-            "bayesian": BayesianConfig,
-        }
-        for name, expected_type in expected_types.items():
-            if not isinstance(getattr(self, name), expected_type):
-                raise TypeError(f"{name} must be a {expected_type.__name__}")
-
         positive = (
             "seconds_per_frame",
             "initial_velocity_std",
@@ -131,11 +123,7 @@ class ObservedFrame:
     observations: tuple[Observation, ...]
 
     def __post_init__(self) -> None:
-        if not isinstance(self.detection, DetectionResult):
-            raise TypeError("detection must be a DetectionResult")
         observations = tuple(self.observations)
-        if any(not isinstance(item, Observation) for item in observations):
-            raise TypeError("observations must contain only Observation objects")
         if any(item.frame != self.detection.frame for item in observations):
             raise ValueError("observations must share the detected frame")
         expected = tuple(
@@ -169,26 +157,19 @@ class PreparedFrame:
     gated_associations: tuple[GatedAssociation, ...]
     hypotheses: tuple[AssociationHypothesis, ...]
     graph: ConflictGraph
-    clusters: tuple[GraphCluster, ...]
     source_state_fingerprint: str
     observed_frame: ObservedFrame | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "frame", _frame_number(self.frame))
-        fields_and_types = (
-            ("observations", Observation),
-            ("predicted_tracks", TrackState),
-            ("gated_associations", GatedAssociation),
-            ("hypotheses", AssociationHypothesis),
-            ("clusters", GraphCluster),
-        )
-        for name, expected_type in fields_and_types:
+        for name in (
+            "observations",
+            "predicted_tracks",
+            "gated_associations",
+            "hypotheses",
+        ):
             values = tuple(getattr(self, name))
-            if any(not isinstance(item, expected_type) for item in values):
-                raise TypeError(f"{name} must contain only {expected_type.__name__} objects")
             object.__setattr__(self, name, values)
-        if not isinstance(self.graph, ConflictGraph):
-            raise TypeError("graph must be a ConflictGraph")
         for name in (
             "observations",
             "predicted_tracks",
@@ -205,11 +186,7 @@ class PreparedFrame:
             raise ValueError("predicted track IDs must be unique")
         if self.graph != encode_conflict_graph(self.hypotheses):
             raise ValueError("graph must exactly encode the supplied hypotheses")
-        if self.clusters != cluster_graph(self.graph):
-            raise ValueError("clusters must be the graph's connected components")
         if self.observed_frame is not None:
-            if not isinstance(self.observed_frame, ObservedFrame):
-                raise TypeError("observed_frame must be an ObservedFrame or None")
             if (
                 self.observed_frame.frame != self.frame
                 or self.observed_frame.observations != self.observations
@@ -217,55 +194,43 @@ class PreparedFrame:
                 raise ValueError("observed_frame must be the source of observations")
         fingerprint = self.source_state_fingerprint
         if (
-            not isinstance(fingerprint, str)
-            or len(fingerprint) != 64
+            len(fingerprint) != 64
             or any(character not in "0123456789abcdef" for character in fingerprint)
         ):
             raise ValueError("source_state_fingerprint must be a SHA-256 hex digest")
 
-    def solver_inputs(self) -> tuple[SolverInput, ...]:
-        """Create one immutable solver input for each independent cluster."""
+    def solver_input(self) -> SolverInput:
+        """Create the frame's single immutable full-graph solver input."""
 
-        return tuple(
-            SolverInput(
-                problem_id=f"frame-{self.frame:04d}-cluster-{cluster.cluster_id:03d}",
-                frame=self.frame,
-                graph=self.graph,
-                cluster=cluster,
-            )
-            for cluster in self.clusters
+        return SolverInput(
+            problem_id=f"frame-{self.frame:04d}",
+            frame=self.frame,
+            graph=self.graph,
         )
 
 
 @dataclass(frozen=True, slots=True)
 class FrameResult:
-    """The retained state after one chosen solver run has been applied."""
+    """The retained state after one chosen solver result has been applied."""
 
     frame: int
     tracks: tuple[TrackState, ...]
     assigned_observation_ids: tuple[int, ...]
-    solver_run: SolverRun
+    solver_result: SolverResult
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "frame", _frame_number(self.frame))
         tracks = tuple(self.tracks)
-        if any(not isinstance(track, TrackState) for track in tracks):
-            raise TypeError("tracks must contain only TrackState objects")
         if any(track.frame != self.frame for track in tracks):
             raise ValueError("tracks must belong to the result frame")
         object.__setattr__(self, "tracks", tracks)
         assigned = tuple(self.assigned_observation_ids)
-        if any(
-            isinstance(item, bool) or not isinstance(item, Integral) or item < 1
-            for item in assigned
-        ):
+        if any(item < 1 for item in assigned):
             raise ValueError("assigned observation IDs must be positive integers")
-        assigned = tuple(sorted(int(item) for item in assigned))
+        assigned = tuple(sorted(assigned))
         if len(assigned) != len(set(assigned)):
             raise ValueError("assigned observation IDs must be unique")
         object.__setattr__(self, "assigned_observation_ids", assigned)
-        if not isinstance(self.solver_run, SolverRun):
-            raise TypeError("solver_run must be a SolverRun")
 
 
 @dataclass(frozen=True, slots=True)
@@ -279,18 +244,14 @@ class SequenceResult:
     def __post_init__(self) -> None:
         steps = tuple(self.steps)
         final_tracks = tuple(self.final_tracks)
-        if any(not isinstance(step, FrameResult) for step in steps):
-            raise TypeError("steps must contain only FrameResult objects")
         frames = tuple(step.frame for step in steps)
         if any(right <= left for left, right in zip(frames, frames[1:])):
             raise ValueError("sequence-result frames must be strictly increasing")
-        if any(not isinstance(track, TrackState) for track in final_tracks):
-            raise TypeError("final_tracks must contain only TrackState objects")
         if steps and final_tracks != steps[-1].tracks:
             raise ValueError("final_tracks must equal the last frame's tracks")
-        if not isinstance(self.solver_name, str) or not self.solver_name.strip():
+        if not self.solver_name.strip():
             raise ValueError("solver_name must be a non-empty string")
-        if any(step.solver_run.solver_name != self.solver_name for step in steps):
+        if any(step.solver_result.solver_name != self.solver_name for step in steps):
             raise ValueError("every sequence step must use solver_name")
         object.__setattr__(self, "steps", steps)
         object.__setattr__(self, "final_tracks", final_tracks)
@@ -310,10 +271,8 @@ class HPC:
         *,
         sequence: str = "01",
     ) -> None:
-        if not isinstance(sequence, str) or not sequence.strip():
+        if not sequence.strip():
             raise ValueError("sequence must be a non-empty string")
-        if config is not None and not isinstance(config, HPCConfig):
-            raise TypeError("config must be an HPCConfig or None")
         self.config = config or HPCConfig()
         self.sequence = sequence
         self._tracks: tuple[TrackState, ...] = ()
@@ -406,11 +365,6 @@ class HPC:
 
         return encode_conflict_graph(tuple(hypotheses))
 
-    def cluster(self, graph: ConflictGraph) -> tuple[GraphCluster, ...]:
-        """Split a conflict graph into independently solvable components."""
-
-        return cluster_graph(graph)
-
     def graph_embedding(
         self,
         graph: ConflictGraph,
@@ -472,8 +426,6 @@ class HPC:
     ) -> PreparedFrame:
         """Compose the public preprocessing stages into one prepared frame."""
 
-        if any(not isinstance(item, Observation) for item in supplied_observations):
-            raise TypeError("observations must contain only Observation objects")
         ordered_observations = tuple(
             sorted(supplied_observations, key=lambda item: item.observation_id)
         )
@@ -488,7 +440,6 @@ class HPC:
         calculated = self.calculate_weights(predicted, gated)
         hypotheses = self.filter_hypotheses(calculated)
         graph = self.encode_graph(hypotheses)
-        clusters = self.cluster(graph)
         return PreparedFrame(
             frame=frame,
             observations=ordered_observations,
@@ -496,19 +447,14 @@ class HPC:
             gated_associations=gated,
             hypotheses=hypotheses,
             graph=graph,
-            clusters=clusters,
             source_state_fingerprint=self._state_fingerprint(),
             observed_frame=observed_frame,
         )
 
-    def solve(self, prepared: PreparedFrame, solver: Solver) -> SolverRun:
-        """Hand every graph component to one solver without changing HPC state."""
+    def solve(self, prepared: PreparedFrame, solver: Solver) -> SolverResult:
+        """Hand the complete frame graph to one solver without changing state."""
 
-        if not isinstance(prepared, PreparedFrame):
-            raise TypeError("prepared must be a PreparedFrame")
-        if not isinstance(solver, Solver):
-            raise TypeError("solver must inherit from Solver")
-        return solver.solve_all(prepared.solver_inputs())
+        return solver.solve(prepared.solver_input())
 
     def compare(
         self,
@@ -517,23 +463,23 @@ class HPC:
     ) -> SolverComparison:
         """Run distinct solvers on byte-identical inputs without updating tracks."""
 
-        return SolverComparison.from_runs(
+        return SolverComparison.from_results(
             self.solve(prepared, solver) for solver in solvers
         )
 
     def bayesian_update(
         self,
         prepared: PreparedFrame,
-        solver_run: SolverRun,
+        solver_result: SolverResult,
     ) -> tuple[tuple[TrackState, ...], frozenset[int]]:
         """Apply shared hit/miss equations to one successful solver choice."""
 
-        self._validate_run(prepared, solver_run)
+        self._validate_result(prepared, solver_result)
         return apply_bayesian_updates(
             prepared.predicted_tracks,
             prepared.observations,
             prepared.hypotheses,
-            solver_run.selected_ids,
+            solver_result.selected_ids,
             self.config.bayesian,
         )
 
@@ -548,16 +494,14 @@ class HPC:
     def advance(
         self,
         prepared: PreparedFrame,
-        solver_run: SolverRun,
+        solver_result: SolverResult,
     ) -> FrameResult:
-        """Atomically advance retained state using one explicitly chosen run."""
+        """Atomically advance retained state using one explicitly chosen result."""
 
-        if not isinstance(prepared, PreparedFrame):
-            raise TypeError("prepared must be a PreparedFrame")
         if prepared.source_state_fingerprint != self._state_fingerprint():
             raise ValueError("prepared frame is stale relative to current HPC state")
 
-        updated, assigned = self.bayesian_update(prepared, solver_run)
+        updated, assigned = self.bayesian_update(prepared, solver_result)
         next_track_id = self._next_track_id
         candidates = list(updated)
         for observation in prepared.observations:
@@ -575,7 +519,7 @@ class HPC:
             frame=prepared.frame,
             tracks=retained,
             assigned_observation_ids=tuple(sorted(assigned)),
-            solver_run=solver_run,
+            solver_result=solver_result,
         )
 
     def step(
@@ -617,8 +561,6 @@ class HPC:
         supplied.  Outcomes are returned as immutable snapshots for inspection.
         """
 
-        if not isinstance(solver, Solver):
-            raise TypeError("solver must inherit from Solver")
         if isinstance(images, Mapping):
             if start_frame is not None:
                 raise ValueError("start_frame cannot be combined with a frame mapping")
@@ -642,21 +584,19 @@ class HPC:
             solver_name=solver.solver_name,
         )
 
-    def _validate_run(self, prepared: PreparedFrame, solver_run: SolverRun) -> None:
-        """Check that a run covers exactly this prepared frame and can advance."""
+    def _validate_result(
+        self,
+        prepared: PreparedFrame,
+        solver_result: SolverResult,
+    ) -> None:
+        """Check that a result covers this prepared frame and can advance."""
 
-        if not isinstance(solver_run, SolverRun):
-            raise TypeError("solver_run must be a SolverRun")
-        solver_inputs = prepared.solver_inputs()
-        if len(solver_run.results) != len(solver_inputs):
-            raise ValueError("solver run does not cover every prepared cluster")
-        for solver_input, result in zip(solver_inputs, solver_run.results, strict=True):
-            validate_result(solver_input, result)
-            if not result.successful:
-                raise ValueError(
-                    f"cannot advance from solver status {result.status!r}; "
-                    "choose a successful solver"
-                )
+        validate_result(prepared.solver_input(), solver_result)
+        if not solver_result.successful:
+            raise ValueError(
+                f"cannot advance from solver status {solver_result.status!r}; "
+                "choose a successful solver"
+            )
 
     def _initialize_track(self, observation: Observation, *, track_id: int) -> TrackState:
         """Create one retained state for an observation unused by the solver."""

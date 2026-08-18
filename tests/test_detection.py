@@ -50,9 +50,9 @@ def test_blank_frame_has_no_detections() -> None:
 
 @pytest.mark.parametrize(
     ("sequence", "frame"),
-    [("", 0), ("01", -1), ("01", 0.5)],
+    [("", 0), ("01", -1)],
 )
-def test_blank_frame_still_validates_event_scope(sequence: str, frame: object) -> None:
+def test_blank_frame_still_validates_event_scope(sequence: str, frame: int) -> None:
     with pytest.raises(ValueError):
         detect_frame(np.zeros((8, 8), dtype=np.uint8), sequence=sequence, frame=frame)
 
@@ -114,43 +114,11 @@ def test_config_rejects_background_scale_smaller_than_noise_scale() -> None:
     (
         {"gaussian_sigma_px": np.nan},
         {"background_sigma_px": np.inf},
-        {"opening_size_px": 1.5},
-        {"min_detection_area_px": 40.5},
     ),
 )
-def test_config_rejects_non_finite_or_non_integer_parameters(values: dict) -> None:
-    with pytest.raises(ValueError, match="finite real|integers"):
+def test_config_rejects_non_finite_parameters(values: dict) -> None:
+    with pytest.raises(ValueError, match="finite real"):
         DetectionConfig(**values)
-
-
-@pytest.mark.parametrize(
-    ("field", "value", "message"),
-    (
-        ("frame", 0.5, "frame must be an integer"),
-        ("detection_id", 1.5, "detection_id must be an integer"),
-        ("area_px", 1.5, "area_px must be an integer"),
-        ("sequence", 1, "sequence must not be empty"),
-        ("source", 1, "source must not be empty"),
-    ),
-)
-def test_event_schema_rejects_values_that_cannot_round_trip(
-    field: str,
-    value: object,
-    message: str,
-) -> None:
-    values = {
-        "sequence": "01",
-        "frame": 0,
-        "detection_id": 1,
-        "x_px": 1.0,
-        "y_px": 2.0,
-        "area_px": 3,
-        "source": "prediction",
-    }
-    values[field] = value
-
-    with pytest.raises(ValueError, match=message):
-        Detection(**values)
 
 
 def test_numpy_scalars_are_normalized_to_json_safe_schema_values() -> None:

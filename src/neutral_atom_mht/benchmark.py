@@ -7,7 +7,6 @@ but gold labels are decoded only after each prediction and never enter detection
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from numbers import Integral
 from pathlib import Path
 import platform
 from typing import Any
@@ -24,7 +23,6 @@ from .data import (
     FRAME_COUNT,
     IMAGE_SHAPE,
     SEQUENCE,
-    TRAINING_ARCHIVE_URL,
     gold_tracking_path,
     load_tiff,
     raw_frame_path,
@@ -43,6 +41,9 @@ from .visualization import save_detection_overview, save_per_frame_performance
 
 OVERVIEW_FRAMES = (0, 60, 120, 180, 240, 299)
 SENSITIVITY_GATES_PX = (5.0, DEFAULT_MAX_DISTANCE_PX, 15.0)
+DATASET_SOURCE_URL = (
+    "https://data.celltrackingchallenge.net/training-datasets/PhC-C2DL-PSC.zip"
+)
 
 
 def _validate_frame_arrays(raw: Any, gold_labels: Any, frame: int) -> None:
@@ -99,13 +100,6 @@ def run_detection_benchmark(
     root = Path(dataset_root)
     output = Path(output_dir)
     supplied_frames = tuple(frames)
-    invalid_frames = [
-        frame
-        for frame in supplied_frames
-        if not isinstance(frame, Integral) or isinstance(frame, bool)
-    ]
-    if invalid_frames:
-        raise ValueError(f"frames must be integers, got {invalid_frames[:3]}")
     selected_frames = tuple(sorted(set(int(frame) for frame in supplied_frames)))
     if not selected_frames:
         raise ValueError("at least one frame is required")
@@ -268,7 +262,7 @@ def run_detection_benchmark(
                     else {"frames": list(selected_frames)}
                 ),
             },
-            "official_training_archive": TRAINING_ARCHIVE_URL,
+            "official_training_archive": DATASET_SOURCE_URL,
             "raw_frames_sha256": raw_sequence_hash,
             "gold_tracking_masks_sha256": gold_sequence_hash,
             "fingerprint_scope": "all 300 sequence-01 raw/gold frame pairs",

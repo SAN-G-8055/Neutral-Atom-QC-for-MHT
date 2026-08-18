@@ -111,12 +111,9 @@ def test_graph_canonicalization_is_independent_of_input_order() -> None:
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
-        ("node_id", True, "node_id"),
         ("node_id", -1, "node_id"),
         ("weight", math.inf, "weight"),
-        ("weight", True, "weight"),
         ("track_id", -1, "track_id"),
-        ("observation_id", None, "observation_id"),
         ("observation_id", -1, "observation_id"),
     ],
 )

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from neutral_atom_mht.graph import ConflictGraph, GraphCluster, GraphNode
+from neutral_atom_mht.graph import ConflictGraph, GraphNode
 from neutral_atom_mht.neutral_atom import (
     NeutralAtomInput,
     NeutralAtomOutput,
@@ -35,7 +35,6 @@ def neutral_problem() -> SolverInput:
         "neutral-adapter-example",
         4,
         graph,
-        GraphCluster(0, graph.node_ids),
     )
 
 

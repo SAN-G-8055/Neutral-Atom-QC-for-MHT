@@ -6,7 +6,7 @@ conflict when they claim the same existing track or the same observation.  This
 module turns those records into a canonical representation, splits the graph
 into connected components, provides stable plotting coordinates, and saves a
 diagnostic figure. It deliberately contains no solver or neutral-atom logic;
-the solver boundary fingerprints each component after clustering.
+solvers decide internally whether and how to use its component decomposition.
 """
 
 from __future__ import annotations
@@ -15,20 +15,10 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 import itertools
 from math import ceil, cos, isfinite, pi, sin, sqrt
-from numbers import Integral, Real
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Protocol
 
 import matplotlib.pyplot as plt
-
-
-def _integer(value: Any) -> bool:
-    return isinstance(value, Integral) and not isinstance(value, bool)
-
-
-def _finite_real(value: Any) -> bool:
-    return isinstance(value, Real) and not isinstance(value, bool) and isfinite(float(value))
-
 
 @dataclass(frozen=True, slots=True)
 class GraphNode:
@@ -44,13 +34,13 @@ class GraphNode:
     observation_id: int
 
     def __post_init__(self) -> None:
-        if not _integer(self.node_id) or self.node_id < 0:
+        if self.node_id < 0:
             raise ValueError("node_id must be a non-negative integer")
-        if not _finite_real(self.weight):
+        if not isfinite(float(self.weight)):
             raise ValueError("weight must be a finite real number")
-        if not _integer(self.track_id) or self.track_id < 0:
+        if self.track_id < 0:
             raise ValueError("track_id must be a non-negative integer")
-        if not _integer(self.observation_id) or self.observation_id < 0:
+        if self.observation_id < 0:
             raise ValueError("observation_id must be a non-negative integer")
         object.__setattr__(self, "node_id", int(self.node_id))
         object.__setattr__(self, "weight", float(self.weight))
@@ -77,9 +67,6 @@ class ConflictGraph:
 
     def __post_init__(self) -> None:
         nodes = tuple(self.nodes)
-        if any(not isinstance(node, GraphNode) for node in nodes):
-            raise TypeError("nodes must contain only GraphNode instances")
-
         node_ids = [node.node_id for node in nodes]
         if len(node_ids) != len(set(node_ids)):
             raise ValueError("node_id values must be unique")
@@ -87,11 +74,9 @@ class ConflictGraph:
 
         normalized_edges: list[tuple[int, int]] = []
         for edge in tuple(self.edges):
-            if not isinstance(edge, (tuple, list)) or len(edge) != 2:
+            if len(edge) != 2:
                 raise ValueError("each edge must contain exactly two node IDs")
             left, right = edge
-            if not _integer(left) or not _integer(right):
-                raise ValueError("edge endpoints must be integers")
             left, right = int(left), int(right)
             if left == right:
                 raise ValueError("self-loop edges are not permitted")
@@ -114,8 +99,6 @@ class ConflictGraph:
     def node(self, node_id: int) -> GraphNode:
         """Return one node, raising ``KeyError`` for an unknown identifier."""
 
-        if not _integer(node_id):
-            raise KeyError(node_id)
         wanted = int(node_id)
         for node in self.nodes:
             if node.node_id == wanted:
@@ -144,12 +127,12 @@ class GraphCluster:
     node_ids: tuple[int, ...]
 
     def __post_init__(self) -> None:
-        if not _integer(self.cluster_id) or self.cluster_id < 0:
+        if self.cluster_id < 0:
             raise ValueError("cluster_id must be a non-negative integer")
         node_ids = tuple(self.node_ids)
         if not node_ids:
             raise ValueError("a graph cluster must contain at least one node")
-        if any(not _integer(node_id) or node_id < 0 for node_id in node_ids):
+        if any(node_id < 0 for node_id in node_ids):
             raise ValueError("cluster node IDs must be non-negative integers")
         normalized = tuple(sorted(int(node_id) for node_id in node_ids))
         if len(normalized) != len(set(normalized)):
@@ -179,23 +162,19 @@ def encode_conflict_graph(associations: Iterable[AssociationLike]) -> ConflictGr
     nodes: list[GraphNode] = []
     for association in associations:
         try:
-            node_id = association.hypothesis_id
-            weight = association.weight
-            track_id = association.track_id
-            observation_id = association.observation_id
+            nodes.append(
+                GraphNode(
+                    node_id=association.hypothesis_id,
+                    weight=association.weight,
+                    track_id=association.track_id,
+                    observation_id=association.observation_id,
+                )
+            )
         except AttributeError as exc:
             raise TypeError(
                 "association records must expose hypothesis_id, track_id, "
                 "observation_id, and weight"
             ) from exc
-        nodes.append(
-            GraphNode(
-                node_id=node_id,
-                weight=weight,
-                track_id=track_id,
-                observation_id=observation_id,
-            )
-        )
 
     by_track: dict[int, list[int]] = {}
     by_observation: dict[int, list[int]] = {}
@@ -216,9 +195,6 @@ def cluster_graph(graph: ConflictGraph) -> tuple[GraphCluster, ...]:
     Components are ordered by their smallest node ID, and their consecutive
     ``cluster_id`` values therefore remain stable across equivalent input order.
     """
-
-    if not isinstance(graph, ConflictGraph):
-        raise TypeError("graph must be a ConflictGraph")
 
     remaining = set(graph.node_ids)
     components: list[tuple[int, ...]] = []
@@ -293,21 +269,15 @@ def save_graph_visualization(
     its Bayesian weight.  Selected nodes, when supplied, receive a dark outline.
     """
 
-    if not isinstance(graph, ConflictGraph):
-        raise TypeError("graph must be a ConflictGraph")
     selected = tuple(selected_node_ids)
-    if any(not _integer(node_id) for node_id in selected):
-        raise ValueError("selected node IDs must be integers")
     selected = tuple(int(node_id) for node_id in selected)
     if len(selected) != len(set(selected)):
         raise ValueError("selected node IDs must be unique")
     unknown = set(selected) - set(graph.node_ids)
     if unknown:
         raise KeyError(f"unknown selected node IDs: {sorted(unknown)}")
-    if not _integer(dpi) or dpi < 1:
+    if dpi < 1:
         raise ValueError("dpi must be a positive integer")
-    if not isinstance(title, str):
-        raise ValueError("title must be a string")
 
     path = Path(output)
     path.parent.mkdir(parents=True, exist_ok=True)

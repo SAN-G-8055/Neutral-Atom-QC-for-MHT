@@ -19,8 +19,8 @@ candidates are then discarded.
 flowchart LR
     Image["Image frame"] --> Observe["HPC.observe<br/>detect observations"]
     Observe --> Prepare["HPC<br/>predict, gate, weight"]
-    Prepare --> Graph["HPC<br/>encode and cluster graph"]
-    Graph --> Input["SolverInput"]
+    Prepare --> Graph["HPC<br/>encode full frame graph"]
+    Graph --> Input["one SolverInput"]
 
     Solver["Solver<br/>abstract contract"] -. inherited by .-> Classical["ClassicalSolver<br/>implemented"]
     Solver -. inherited by .-> Quantum["QuantumSolver<br/>manual adapter"]
@@ -57,14 +57,15 @@ python -m pip install -c requirements-detection-lock.txt -e .
 Launch the root-level interface with:
 
 ```powershell
-cell-detect prepare-data
 jupyter lab user_notebook.ipynb
 ```
 
 The notebook has three cells—imports, configuration, and run—and processes
 the real sequence-01 frame `data/PhC-C2DL-PSC/01/t000.tif`. Its import cell
 adds the local `src/` directory explicitly, so it also works from an
-uninstalled source checkout when opened from the repository root.
+uninstalled source checkout when opened from the repository root. The project
+assumes the sequence TIFFs are already present under `data/PhC-C2DL-PSC/`;
+there is no downloader or command-line interface.
 
 ## Object-oriented interface
 
@@ -91,8 +92,8 @@ observe image
   -> gate observations
   -> calculate Bayesian association weights
   -> filter candidates
-  -> encode and cluster the conflict graph
-  -> create immutable SolverInput objects
+  -> encode the complete conflict graph
+  -> create one immutable SolverInput
   -> Solver.solve(...)
   -> apply Bayesian/Kalman updates
   -> filter retained tracks
@@ -102,14 +103,14 @@ The main object responsibilities are:
 
 | Object | Responsibility |
 | --- | --- |
-| `HPC` | Converts images to observations, exposes every preprocessing stage, owns retained track state, creates solver inputs, validates solver results, and advances the sequence. |
+| `HPC` | Converts images to observations, exposes every preprocessing stage, owns retained track state, creates one full-frame solver input, validates its result, and advances the sequence. |
 | `Solver` | Defines the shared `solve(SolverInput) -> SolverResult` contract. It does not detect cells or mutate tracks. |
-| `ClassicalSolver` | Computes an exact maximum-weight independent set for each graph cluster, subject to its declared size limit. |
+| `ClassicalSolver` | Finds connected components internally and computes their exact maximum-weight independent sets, subject to its per-component size limit. |
 | `QuantumSolver` | Serializes a common problem for a future neutral-atom implementation and validates a supplied response as a common solver selection. It performs no optimization or simulation today. |
 
 For inspection, call `observe()`, `prepare_frame()`, `solve()`, and `advance()`
 separately. `prepare_frame()` is read-only and exposes its predictions, gates,
-weighted candidates, graph, clusters, and solver inputs. `step()` is the
+weighted candidates, full graph, and solver input. `step()` is the
 one-frame convenience method; `run_sequence()` repeats it over many images.
 The notebook keeps the interface deliberately smaller: it prepares, solves,
 and advances one real dataset frame without redefining package algorithms.
@@ -169,8 +170,10 @@ identical weights and cannot apply a private probability update.
 
 ## Solver contract
 
-Each graph cluster is frozen as a `SolverInput` with a canonical SHA-256
-fingerprint. Every solver returns the same `SolverResult` fields:
+The complete graph for one frame is frozen as a single `SolverInput` with a
+canonical SHA-256 fingerprint. It may contain any number of disconnected
+components. Each solver owns any component decomposition it needs and returns
+one `SolverResult` with the common fields:
 
 ```text
 schema_version, problem_id, input_fingerprint, solver_name,
@@ -181,8 +184,10 @@ selected_ids, objective, feasible, status, runtime_seconds, diagnostics
 the objective from the original graph weights. Only a validated successful
 result may advance tracking state.
 
-`ClassicalSolver` returns `optimal` for a solved problem and reports its size
-limit explicitly rather than changing the problem. `QuantumSolver` reports
+`ClassicalSolver` solves disconnected components independently behind this
+boundary, returns their combined selection as `optimal`, and reports its
+per-component size limit explicitly rather than changing the problem.
+`QuantumSolver` reports
 `not_implemented`; it does not call QuTiP, model a Rydberg Hamiltonian, claim
 Pasqal-device compatibility, synthesize a quantum answer, or fall back to the
 classical algorithm. Its `format_input()` and `format_output()` methods define
@@ -198,11 +203,13 @@ Challenge. The retained source data are:
 
 Challenge test data, sequence 02, silver-standard `ST` annotations, and
 relabelled error masks are not used. Source images are local and ignored by
-Git. Prepare them and reproduce the benchmark with:
+Git. Place the retained files in this layout before opening the notebook or
+calling `run_detection_benchmark()` from Python:
 
-```powershell
-cell-detect prepare-data
-cell-detect run
+```text
+data/PhC-C2DL-PSC/
+  01/t000.tif ... t299.tif
+  01_GT/TRA/man_track000.tif ... man_track299.tif
 ```
 
 The detector is deterministic:
@@ -280,12 +287,16 @@ src/neutral_atom_mht/
   graph.py                        graph encoding, clustering, and plotting
   detection.py                    deterministic cell detector
   evaluation.py                   gold-standard matching and metrics
-  data.py                         sequence-01 acquisition and validation
+  data.py                         local sequence-01 paths and validation
   io.py                           artifact serialization
   visualization.py               detection figures
   benchmark.py                    reproducible detection benchmark
-  cli.py                          command-line entry point
 tests/                            unit and end-to-end tests
+SynthDataGen.py                   standalone synthetic-data research script
+nbqss_project_real_quantum_attempt.py
+                                  standalone Pulser research attempt
+NBQSS_Project_Real_Quantum_Attempt.ipynb
+                                  notebook source of the Pulser attempt
 ```
 
 Each source file begins with a plain-language module description stating what
@@ -296,6 +307,8 @@ navigate nested solver or tracking packages.
 ## Current limitations
 
 - Neutral-atom solving is a documented extension point, not an implementation.
+- The root quantum attempt and synthetic-data generator are standalone research
+  artifacts and are intentionally not wired into the package interfaces yet.
 - The exact classical solver has exponential worst-case complexity and a
   declared node cap.
 - Detection parameters are fixed for interpretability rather than learned or

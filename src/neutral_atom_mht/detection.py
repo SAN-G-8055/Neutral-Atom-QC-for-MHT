@@ -22,29 +22,17 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from math import isfinite
-from numbers import Integral, Real
 from typing import Any
 
 import numpy as np
 from scipy import ndimage as ndi
 
-
-def _finite_real(value: Any) -> bool:
-    return isinstance(value, Real) and not isinstance(value, bool) and isfinite(float(value))
-
-
-def _integer(value: Any) -> bool:
-    return isinstance(value, Integral) and not isinstance(value, bool)
-
-
-def _validate_event_scope(sequence: Any, frame: Any, source: Any) -> None:
-    if not isinstance(sequence, str) or not sequence:
+def _validate_event_scope(sequence: str, frame: int, source: str) -> None:
+    if not sequence:
         raise ValueError("sequence must not be empty")
-    if not _integer(frame):
-        raise ValueError("frame must be an integer")
     if frame < 0:
         raise ValueError("frame must be non-negative")
-    if not isinstance(source, str) or not source:
+    if not source:
         raise ValueError("source must not be empty")
 
 
@@ -74,7 +62,9 @@ class DetectionConfig:
             "high_threshold_factor": self.high_threshold_factor,
             "low_threshold_factor": self.low_threshold_factor,
         }
-        invalid_real = [name for name, value in real_fields.items() if not _finite_real(value)]
+        invalid_real = [
+            name for name, value in real_fields.items() if not isfinite(float(value))
+        ]
         if invalid_real:
             raise ValueError(f"configuration values must be finite real numbers: {', '.join(invalid_real)}")
         integer_fields = {
@@ -85,9 +75,6 @@ class DetectionConfig:
             "min_detection_area_px": self.min_detection_area_px,
             "max_detection_area_px": self.max_detection_area_px,
         }
-        invalid_integer = [name for name, value in integer_fields.items() if not _integer(value)]
-        if invalid_integer:
-            raise ValueError(f"configuration values must be integers: {', '.join(invalid_integer)}")
         for name, value in real_fields.items():
             object.__setattr__(self, name, float(value))
         for name, value in integer_fields.items():
@@ -125,14 +112,10 @@ class Detection:
 
     def __post_init__(self) -> None:
         _validate_event_scope(self.sequence, self.frame, self.source)
-        if not _integer(self.detection_id):
-            raise ValueError("detection_id must be an integer")
         if self.detection_id < 1:
             raise ValueError("detection_id must be positive")
-        if not _finite_real(self.x_px) or not _finite_real(self.y_px):
+        if not isfinite(float(self.x_px)) or not isfinite(float(self.y_px)):
             raise ValueError("detection coordinates must be finite")
-        if not _integer(self.area_px):
-            raise ValueError("area_px must be an integer")
         if self.area_px < 1:
             raise ValueError("area_px must be positive")
         object.__setattr__(self, "frame", int(self.frame))

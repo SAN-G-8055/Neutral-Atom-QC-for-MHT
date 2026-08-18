@@ -32,12 +32,8 @@ class FilterConfig:
             raise ValueError("acceleration_std must be finite and non-negative")
         if not 0.0 < float(self.minimum_posterior) < 1.0:
             raise ValueError("minimum_posterior must lie strictly between 0 and 1")
-        if isinstance(self.maximum_misses, bool) or not isinstance(self.maximum_misses, int):
-            raise ValueError("maximum_misses must be an integer")
         if self.maximum_misses < 0:
             raise ValueError("maximum_misses cannot be negative")
-        if isinstance(self.maximum_tracks, bool) or not isinstance(self.maximum_tracks, int):
-            raise ValueError("maximum_tracks must be an integer")
         if self.maximum_tracks < 1:
             raise ValueError("maximum_tracks must be positive")
         object.__setattr__(self, "acceleration_std", float(self.acceleration_std))
@@ -80,7 +76,7 @@ def predict_tracks(
 ) -> tuple[TrackState, ...]:
     """Predict each retained track to ``frame`` without using observations."""
 
-    if isinstance(frame, bool) or not isinstance(frame, int) or frame < 0:
+    if frame < 0:
         raise ValueError("frame must be a non-negative integer")
     if not isfinite(float(seconds_per_frame)) or seconds_per_frame <= 0.0:
         raise ValueError("seconds_per_frame must be finite and positive")
@@ -143,8 +139,6 @@ def filter_association_hypotheses(
 ) -> tuple[AssociationHypothesis, ...]:
     """Keep candidates at or above the declared MWIS benefit threshold."""
 
-    if any(not isinstance(item, AssociationHypothesis) for item in hypotheses):
-        raise TypeError("hypotheses must contain only AssociationHypothesis objects")
     threshold = float(minimum_weight)
     if not isfinite(threshold) or threshold < 0.0:
         raise ValueError("minimum_weight must be finite and non-negative")

@@ -63,10 +63,8 @@ class QuantumSolver(Solver):
         return "neutral_atom"
 
     def format_input(self, solver_input: SolverInput) -> NeutralAtomInput:
-        """Translate one immutable graph component into the portable request."""
+        """Translate one immutable frame graph into the portable request."""
 
-        if not isinstance(solver_input, SolverInput):
-            raise TypeError("solver_input must be a SolverInput")
         return NeutralAtomInput(
             problem_id=solver_input.problem_id,
             input_fingerprint=solver_input.fingerprint,
@@ -82,10 +80,6 @@ class QuantumSolver(Solver):
     ) -> SolverSelection:
         """Validate response identity and convert it to the shared selection."""
 
-        if not isinstance(solver_input, SolverInput):
-            raise TypeError("solver_input must be a SolverInput")
-        if not isinstance(output, NeutralAtomOutput):
-            raise TypeError("output must be a NeutralAtomOutput")
         if output.problem_id != solver_input.problem_id:
             raise ValueError("neutral-atom output problem_id does not match input")
         if output.input_fingerprint != solver_input.fingerprint:
@@ -97,7 +91,7 @@ class QuantumSolver(Solver):
             diagnostics=output.diagnostics,
         )
         selected = set(selection.selected_ids)
-        unknown = selected - set(solver_input.cluster.node_ids)
+        unknown = selected - set(solver_input.graph.node_ids)
         if unknown:
             raise ValueError(f"neutral-atom output selected unknown nodes: {sorted(unknown)}")
         if any(left in selected and right in selected for left, right in solver_input.edges):

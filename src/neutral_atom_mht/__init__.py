@@ -24,7 +24,6 @@ from .solver import (
     SolverComparison,
     SolverInput,
     SolverResult,
-    SolverRun,
     SolverSelection,
 )
 
@@ -40,7 +39,6 @@ __all__ = [
     "SolverComparison",
     "SolverInput",
     "SolverResult",
-    "SolverRun",
     "SolverSelection",
     "TrackState",
     "hpc",
