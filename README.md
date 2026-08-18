@@ -6,8 +6,9 @@ inspection. The object-oriented interface has two clear responsibilities:
 the Hypothesis Processing Controller (`HPC`) owns image preprocessing and
 tracking state, while a `Solver` chooses a consistent set of weighted
 associations. `ClassicalSolver` is implemented and usable. `QuantumSolver` is
-intentionally only a documented neutral-atom input/output adapter; the physical
-solver is left for a later manual implementation.
+a Pulser/QuTiP implementation of the neutral-atom quantum adiabatic attempt.
+Both solvers consume the same complete frame problem and hide their component
+decomposition from the tracking controller.
 
 No population of global hypotheses is retained. Candidate associations exist
 for one frame, the selected result updates one state per track, and the local
@@ -23,11 +24,11 @@ flowchart LR
     Graph --> Input["one SolverInput"]
 
     Solver["Solver<br/>abstract contract"] -. inherited by .-> Classical["ClassicalSolver<br/>implemented"]
-    Solver -. inherited by .-> Quantum["QuantumSolver<br/>manual adapter"]
+    Solver -. inherited by .-> Quantum["QuantumSolver<br/>Pulser/QuTiP simulator"]
     Input --> Classical
-    Input -. formatted for future implementation .-> Quantum
+    Input --> Quantum
     Classical --> Result["SolverResult"]
-    Quantum -. normalized manual output .-> Result
+    Quantum --> Result
 
     Result --> Update["HPC.advance<br/>Bayesian and Kalman update"]
     Update --> State[("retained track state")]
@@ -45,6 +46,23 @@ Python 3.11 or newer is required.
 ```powershell
 python -m pip install -e ".[test,notebook]"
 python -m pytest
+```
+
+Install the optional Pulser simulation stack before using `QuantumSolver`:
+
+```powershell
+python -m pip install -e ".[quantum]"
+```
+
+The quantum dependency is loaded lazily. Importing the package and running the
+classical path therefore do not require Pulser.
+
+The real Pulser/QuTiP smoke test is opt-in because it runs the full embedding
+search and 40,000 ns pulse:
+
+```powershell
+$env:NEUTRAL_ATOM_INTEGRATION="1"
+python -m pytest tests/test_neutral_atom_integration.py -q
 ```
 
 To reproduce the pinned numerical environment used for the detection
@@ -106,7 +124,7 @@ The main object responsibilities are:
 | `HPC` | Converts images to observations, exposes every preprocessing stage, owns retained track state, creates one full-frame solver input, validates its result, and advances the sequence. |
 | `Solver` | Defines the shared `solve(SolverInput) -> SolverResult` contract. It does not detect cells or mutate tracks. |
 | `ClassicalSolver` | Finds connected components internally and computes their exact maximum-weight independent sets, subject to its per-component size limit. |
-| `QuantumSolver` | Serializes a common problem for a future neutral-atom implementation and validates a supplied response as a common solver selection. It performs no optimization or simulation today. |
+| `QuantumSolver` | Finds connected components internally, embeds each supported component in a neutral-atom register, runs the Pulser/QuTiP simulation, decodes feasible samples to original graph-node IDs, and combines them into one result. |
 
 For inspection, call `observe()`, `prepare_frame()`, `solve()`, and `advance()`
 separately. `prepare_frame()` is read-only and exposes its predictions, gates,
@@ -187,11 +205,59 @@ result may advance tracking state.
 `ClassicalSolver` solves disconnected components independently behind this
 boundary, returns their combined selection as `optimal`, and reports its
 per-component size limit explicitly rather than changing the problem.
-`QuantumSolver` reports
-`not_implemented`; it does not call QuTiP, model a Rydberg Hamiltonian, claim
-Pasqal-device compatibility, synthesize a quantum answer, or fall back to the
-classical algorithm. Its `format_input()` and `format_output()` methods define
-the manual integration boundary for later work.
+
+`QuantumSolver` applies the same internal decomposition, then runs the integrated
+Pulser quantum-adiabatic sequence with the local QuTiP backend for each supported
+component. Qubit positions are local implementation details: sampled bitstrings
+are mapped back to the original graph-node IDs before the component selections
+are combined. A usable simulated selection reports `completed`, not `optimal`,
+because sampling does not prove the maximum-weight solution. Diagnostics retain
+the component mappings, embedding information, and sample counts.
+
+Singleton and complete-clique components are resolved directly by selecting the
+highest positive-weight node, with a stable node-ID tie break. The original
+Rabi-frequency heuristic requires at least one nonedge, so applying it to a
+clique would not preserve its intended physical regime. This narrow topology
+guard is not a general classical fallback; every other supported component uses
+the Pulser simulation.
+
+`NeutralAtomConfig` exposes `random_seed=0`, `mapping_tolerance=1e-6`,
+`mapping_max_iterations=200_000`, `pulse_duration_ns=40_000`,
+`interaction_scale=10.0`, and `maximum_component_nodes=16`. The node cap
+protects the exponentially scaling state-vector simulation; an oversized
+simulated component produces `unsupported_size` instead of a partial tracking
+decision.
+
+Likewise, unsupported negative simulation weights, a failed embedding, or no
+valid feasible sample report `unsupported_weights`, `embedding_failed`, or
+`no_feasible_sample` atomically.
+
+`random_seed` scopes NumPy randomness across embedding and backend sampling as
+far as the selected backend honors it; sampled, vendor-dependent results do not
+carry an absolute reproducibility guarantee.
+
+Pulser is imported only when this path is used. Register, pulse, and
+sample-distribution visualizations live separately in
+`neutral_atom_visualization.py`; solving itself does not display figures. The
+defaults use `MockDevice` and `QutipBackendV2`, not Pasqal hardware.
+
+Normal tracking calls `solve()`. To inspect the artifacts from one simulation,
+call `execute()` instead (not both for the same frame), then pass its run records
+to the separate visualizer:
+
+```python
+from neutral_atom_mht import NeutralAtomVisualizer, QuantumSolver
+
+solver = QuantumSolver()
+execution = solver.execute(solver_input)
+if not execution.successful:
+    raise RuntimeError(execution.diagnostics.get("message", execution.status))
+run = execution.runs[0]
+visualizer = NeutralAtomVisualizer()
+visualizer.save_distribution(run, "quantum-samples.png")
+if run.program is not None:
+    visualizer.save_register(run.program, "quantum-register.png")
+```
 
 ## Cell detection and gold-standard evaluation
 
@@ -279,7 +345,7 @@ src/neutral_atom_mht/
   hpc.py                          stateful image-to-association controller
   solver.py                       abstract solver and common data contract
   classical_solver.py             implemented exact graph solver
-  neutral_atom.py                 documented manual quantum adapter
+  neutral_atom.py                 Pulser/QuTiP neutral-atom solver
   models.py                       observations, tracks, and candidates
   filtering.py                    Kalman prediction and update
   gating.py                       statistical and distance gates
@@ -290,13 +356,12 @@ src/neutral_atom_mht/
   data.py                         local sequence-01 paths and validation
   io.py                           artifact serialization
   visualization.py               detection figures
+  neutral_atom_visualization.py  neutral-atom diagnostic figures
   benchmark.py                    reproducible detection benchmark
 tests/                            unit and end-to-end tests
 SynthDataGen.py                   standalone synthetic-data research script
-nbqss_project_real_quantum_attempt.py
-                                  standalone Pulser research attempt
 NBQSS_Project_Real_Quantum_Attempt.ipynb
-                                  notebook source of the Pulser attempt
+                                  original Pulser research notebook retained as provenance
 ```
 
 Each source file begins with a plain-language module description stating what
@@ -306,9 +371,12 @@ navigate nested solver or tracking packages.
 
 ## Current limitations
 
-- Neutral-atom solving is a documented extension point, not an implementation.
-- The root quantum attempt and synthetic-data generator are standalone research
-  artifacts and are intentionally not wired into the package interfaces yet.
+- Neutral-atom solving currently uses a local QuTiP state-vector simulator. Its
+  sampled result is heuristic, depends on the graph embedding, and is subject to
+  the configured component-size cap; it is not a hardware or optimality claim.
+- The original quantum notebook is retained only as provenance. The
+  synthetic-data generator remains a standalone research artifact and is not
+  wired into the package interface.
 - The exact classical solver has exponential worst-case complexity and a
   declared node cap.
 - Detection parameters are fixed for interpretability rather than learned or

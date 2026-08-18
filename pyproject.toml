@@ -17,6 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 notebook = ["ipykernel>=6", "jupyterlab>=4"]
+quantum = ["pulser-core>=1.8,<2", "pulser-simulation>=1.8,<2"]
 test = ["ipykernel>=6", "nbclient>=0.10", "nbformat>=5.10", "pytest>=8.0"]
 
 [tool.setuptools.packages.find]

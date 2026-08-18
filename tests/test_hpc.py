@@ -237,7 +237,7 @@ def test_configuration_change_invalidates_an_old_prepared_frame() -> None:
         tracker.advance(prepared, solver_result)
 
 
-def test_unimplemented_neutral_atom_result_cannot_change_tracking_state() -> None:
+def test_neutral_atom_result_uses_the_common_hpc_round_trip() -> None:
     tracker = configured_hpc()
     classical = ClassicalSolver()
     tracker.step_observations(
@@ -249,15 +249,16 @@ def test_unimplemented_neutral_atom_result_cannot_change_tracking_state() -> Non
         (Observation(frame=1, observation_id=1, x=0.1, y=0.0),),
         frame=1,
     )
-    before = tracker.tracks
-
     neutral_atom_result = tracker.solve(prepared, QuantumSolver())
 
-    assert not neutral_atom_result.successful
-    assert neutral_atom_result.status == "not_implemented"
-    with pytest.raises(ValueError, match="cannot advance"):
-        tracker.advance(prepared, neutral_atom_result)
-    assert tracker.tracks == before
+    assert neutral_atom_result.successful
+    assert neutral_atom_result.status == "completed"
+    assert neutral_atom_result.selected_ids == prepared.graph.node_ids
+
+    frame_result = tracker.advance(prepared, neutral_atom_result)
+    assert frame_result.solver_result == neutral_atom_result
+    assert frame_result.assigned_observation_ids == (1,)
+    assert tracker.tracks == frame_result.tracks
 
 
 def test_run_sequence_consumes_an_image_stream_once_and_returns_frozen_history() -> None:
