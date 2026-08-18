@@ -23,8 +23,9 @@ flowchart LR
     Prepare --> Graph["HPC<br/>encode full frame graph"]
     Graph --> Input["one SolverInput"]
 
-    Solver["Solver<br/>abstract contract"] -. inherited by .-> Classical["ClassicalSolver<br/>implemented"]
-    Solver -. inherited by .-> Quantum["QuantumSolver<br/>Pulser/QuTiP simulator"]
+    Solver["Solver<br/>shared solve lifecycle"] -. inherited by .-> Components["ComponentSolver<br/>shared graph factoring"]
+    Components -. inherited by .-> Classical["ClassicalSolver<br/>implemented"]
+    Components -. inherited by .-> Quantum["QuantumSolver<br/>Pulser/QuTiP simulator"]
     Input --> Classical
     Input --> Quantum
     Classical --> Result["SolverResult"]
@@ -129,7 +130,8 @@ The main object responsibilities are:
 | Object | Responsibility |
 | --- | --- |
 | `HPC` | Converts images to observations, exposes every preprocessing stage, owns retained track state, creates one full-frame solver input, validates its result, and advances the sequence. |
-| `Solver` | Defines the shared `solve(SolverInput) -> SolverResult` contract. It does not detect cells or mutate tracks. |
+| `Solver` | Owns the shared `solve(SolverInput) -> SolverResult` lifecycle, including timing, objective calculation, and validation. It does not detect cells or mutate tracks. |
+| `ComponentSolver` | Extends `Solver` with deterministic component factoring, a per-component capacity, and common graph diagnostics. |
 | `ClassicalSolver` | Finds connected components internally and computes their exact maximum-weight independent sets, subject to its per-component size limit. |
 | `QuantumSolver` | Finds connected components internally, embeds each supported component in a neutral-atom register, runs the Pulser/QuTiP simulation, decodes feasible samples to original graph-node IDs, and combines them into one result. |
 
@@ -230,10 +232,11 @@ the Pulser simulation.
 
 `NeutralAtomConfig` exposes `random_seed=0`, `mapping_tolerance=1e-6`,
 `mapping_max_iterations=200_000`, `pulse_duration_ns=40_000`,
-`interaction_scale=10.0`, `maximum_component_nodes=16`, and
-`qutip_cache_dir=data/.cache/qutip`. The node cap protects the exponentially
-scaling state-vector simulation; an oversized simulated component produces
-`unsupported_size` instead of a partial tracking decision.
+`interaction_scale=10.0`, and `qutip_cache_dir=data/.cache/qutip`.
+`QuantumSolver(maximum_component_nodes=16)` owns the inherited component cap.
+The cap protects the exponentially scaling state-vector simulation; an
+oversized simulated component produces `unsupported_size` instead of a partial
+tracking decision.
 
 Likewise, unsupported negative simulation weights, a failed embedding, or no
 valid feasible sample report `unsupported_weights`, `embedding_failed`, or
@@ -243,14 +246,14 @@ valid feasible sample report `unsupported_weights`, `embedding_failed`, or
 far as the selected backend honors it; sampled, vendor-dependent results do not
 carry an absolute reproducibility guarantee.
 
-Pulser is imported only when this path is used. Register, pulse, and
-sample-distribution visualizations live separately in
-`neutral_atom_visualization.py`; solving itself does not display figures. The
-defaults use `MockDevice` and `QutipBackendV2`, not Pasqal hardware.
+Pulser is imported only when this path is used. `NeutralAtomVisualizer` lives
+in the same `neutral_atom.py` module as the solver, while its rendering remains
+explicit and opt-in; solving itself does not display figures. The defaults use
+`MockDevice` and `QutipBackendV2`, not Pasqal hardware.
 
 Normal tracking calls `solve()`. To inspect the diagnostics from one simulation,
 call `execute()` instead (not both for the same frame), then pass its run records
-to the separate visualizer:
+to a visualizer object:
 
 ```python
 from neutral_atom_mht import NeutralAtomVisualizer, QuantumSolver
@@ -395,9 +398,9 @@ src/
   _version.py                      shared project version
   neutral_atom_mht.py             public package facade
   hpc.py                          stateful image-to-association controller
-  solver.py                       abstract solver and common data contract
+  solver.py                       solver lifecycle, component parent, and data contract
   classical_solver.py             implemented exact graph solver
-  neutral_atom.py                 Pulser/QuTiP neutral-atom solver
+  neutral_atom.py                 Pulser/QuTiP solver and opt-in diagnostics figures
   models.py                       observations, tracks, and candidates
   filtering.py                    Kalman prediction and update
   gating.py                       statistical and distance gates
@@ -409,7 +412,6 @@ src/
   artifact_io.py                  benchmark serialization
   synthetic_data.py               OO synthetic sequence generator and loaders
   visualization.py               detection figures
-  neutral_atom_visualization.py  neutral-atom diagnostic figures
   benchmark.py                    reproducible detection benchmark
 tests/                            unit and end-to-end tests
 NBQSS_Project_Real_Quantum_Attempt.ipynb

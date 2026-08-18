@@ -20,7 +20,7 @@ from neutral_atom import (
     NeutralAtomRun,
     QuantumSolver,
 )
-from solver import Solver, SolverInput, validate_result
+from solver import ComponentSolver, Solver, SolverInput, validate_result
 
 
 class ScriptedRunner:
@@ -86,7 +86,21 @@ def component_run(
 
 
 def test_quantum_solver_inherits_the_shared_solver_template() -> None:
-    assert issubclass(QuantumSolver, Solver)
+    solver = QuantumSolver(runner=ScriptedRunner({}))
+
+    assert issubclass(QuantumSolver, ComponentSolver)
+    assert issubclass(ComponentSolver, Solver)
+    assert QuantumSolver.solve is Solver.solve
+    assert QuantumSolver.solver_name is Solver.solver_name
+    assert QuantumSolver._components is ComponentSolver._components
+    assert QuantumSolver._problem_diagnostics is ComponentSolver._problem_diagnostics
+    assert QuantumSolver._component_edges is ComponentSolver._component_edges
+    assert (
+        QuantumSolver._oversized_component_ids
+        is ComponentSolver._oversized_component_ids
+    )
+    assert solver.solver_name == "neutral_atom"
+    assert solver.maximum_component_nodes == 16
 
 
 def test_quantum_solver_clusters_one_full_input_and_decodes_original_ids() -> None:
@@ -282,7 +296,7 @@ def test_maximum_component_size_is_an_atomic_unsuccessful_result() -> None:
     )
 
     result = QuantumSolver(
-        config=NeutralAtomConfig(maximum_component_nodes=2),
+        maximum_component_nodes=2,
         runner=runner,
     ).solve(solver_input)
 
@@ -326,7 +340,6 @@ def test_configuration_defaults_preserve_the_quantum_attempt_parameters() -> Non
     assert config.mapping_max_iterations == 200_000
     assert config.pulse_duration_ns == 40_000
     assert config.interaction_scale == 10.0
-    assert config.maximum_component_nodes == 16
 
 
 @pytest.mark.parametrize("seed", (-1, 2**32))

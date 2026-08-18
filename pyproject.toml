@@ -38,7 +38,6 @@ py-modules = [
     "models",
     "neutral_atom",
     "neutral_atom_mht",
-    "neutral_atom_visualization",
     "solver",
     "synthetic_data",
     "visualization",

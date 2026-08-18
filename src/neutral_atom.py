@@ -1,4 +1,4 @@
-"""Run the neutral-atom MWIS attempt behind the shared solver contract.
+"""Run and visualize the neutral-atom MWIS attempt in one focused module.
 
 ``QuantumSolver`` accepts one complete frame graph, factors disconnected
 components internally, and maps every sampled bit back to the graph's original
@@ -6,28 +6,32 @@ node identifiers. The numerical embedding and pulse construction remain close
 to the original Pulser experiment. Pulser itself is loaded only by the concrete
 runner, so the package and its classical solver have no quantum requirement.
 
-Plotting is deliberately absent. Immutable program and run artifacts can be
-passed to :mod:`neutral_atom_visualization` when a caller
-explicitly wants figures.
+Solving remains headless. ``NeutralAtomVisualizer`` renders immutable program
+and run artifacts only when a caller explicitly asks it to save figures.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from math import fsum, isfinite
 import os
 from pathlib import Path
 import sys
 from threading import Lock
-from typing import Protocol
+from typing import Any, Protocol
 
 import numpy as np
 from scipy.optimize import minimize
 from scipy.spatial.distance import euclidean, pdist, squareform
 
-from graph import GraphCluster, cluster_graph
-from solver import SUCCESS_STATUSES, Solver, SolverInput, SolverSelection
+from graph import GraphCluster
+from solver import (
+    SUCCESS_STATUSES,
+    ComponentSolver,
+    SolverInput,
+    SolverSelection,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,7 +43,6 @@ class NeutralAtomConfig:
     mapping_max_iterations: int = 200_000
     pulse_duration_ns: int = 40_000
     interaction_scale: float = 10.0
-    maximum_component_nodes: int = 16
     qutip_cache_dir: Path = Path("data") / ".cache" / "qutip"
 
     def __post_init__(self) -> None:
@@ -53,8 +56,6 @@ class NeutralAtomConfig:
             raise ValueError("pulse_duration_ns must be positive")
         if not isfinite(self.interaction_scale) or self.interaction_scale <= 0.0:
             raise ValueError("interaction_scale must be finite and positive")
-        if self.maximum_component_nodes < 1:
-            raise ValueError("maximum_component_nodes must be positive")
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,32 +178,12 @@ class NeutralAtomRunner(Protocol):
         """Build, run, and return samples for one graph component."""
 
 
-class NeutralAtomRunError(RuntimeError):
-    """Base class for expected component-run failures with solver statuses."""
+class NeutralAtomError(RuntimeError):
+    """One status-bearing failure used across neutral-atom execution."""
 
-    status = "execution_error"
-
-
-class NeutralAtomDependencyError(NeutralAtomRunError):
-    """Raised when the optional Pulser simulation stack is unavailable."""
-
-    status = "dependency_missing"
-
-
-class NeutralAtomExecutionError(NeutralAtomRunError):
-    """Raised when the physical program cannot be constructed safely."""
-
-
-class NeutralAtomEmbeddingError(NeutralAtomExecutionError):
-    """Raised when coordinate optimization does not converge."""
-
-    status = "embedding_failed"
-
-
-class NeutralAtomSampleError(NeutralAtomExecutionError):
-    """Raised when a backend returns no valid feasible sample."""
-
-    status = "no_feasible_sample"
+    def __init__(self, status: str, message: str) -> None:
+        self.status = status
+        super().__init__(message)
 
 
 class PulserQutipRunner:
@@ -250,10 +231,11 @@ class PulserQutipRunner:
                 np.random.seed(self.config.random_seed)
                 try:
                     return self._execute_seeded(component, runtime)
-                except NeutralAtomRunError:
+                except NeutralAtomError:
                     raise
                 except Exception as exc:
-                    raise NeutralAtomExecutionError(
+                    raise NeutralAtomError(
+                        "execution_error",
                         f"component {component.component_id} vendor execution failed: "
                         f"{type(exc).__name__}: {exc}"
                     ) from exc
@@ -285,11 +267,13 @@ class PulserQutipRunner:
         coordinates_array = np.reshape(mapping.x, (len(matrix), 2))
         mapping_cost = float(mapping.fun)
         if not np.all(np.isfinite(coordinates_array)) or not isfinite(mapping_cost):
-            raise NeutralAtomExecutionError(
+            raise NeutralAtomError(
+                "execution_error",
                 f"component {component.component_id} produced a non-finite embedding"
             )
         if not mapping.success:
-            raise NeutralAtomEmbeddingError(
+            raise NeutralAtomError(
+                "embedding_failed",
                 f"component {component.component_id} embedding did not converge: "
                 f"{mapping.message} (cost={mapping_cost:.6g})"
             )
@@ -329,7 +313,8 @@ class PulserQutipRunner:
                 if matrix[right, left] == 0.0:
                     nonedge_distances.append(distance)
         if not nonedge_distances or min(nonedge_distances) <= 0.0:
-            raise NeutralAtomExecutionError(
+            raise NeutralAtomError(
+                "execution_error",
                 f"component {component.component_id} has no usable nonedge separation"
             )
 
@@ -339,7 +324,8 @@ class PulserQutipRunner:
             * self.config.interaction_scale
         )
         if not isfinite(omega) or omega <= 0.0:
-            raise NeutralAtomExecutionError(
+            raise NeutralAtomError(
+                "execution_error",
                 f"component {component.component_id} produced an invalid Rabi frequency"
             )
         delta_initial = -omega
@@ -398,7 +384,8 @@ class PulserQutipRunner:
         except ModuleNotFoundError as exc:
             if exc.name != "pulser":
                 raise
-            raise NeutralAtomDependencyError(
+            raise NeutralAtomError(
+                "dependency_missing",
                 'Pulser is required for neutral-atom simulation; install ".[quantum]"'
             ) from exc
 
@@ -408,7 +395,8 @@ class PulserQutipRunner:
             except ModuleNotFoundError as exc:
                 if exc.name != "pulser_simulation":
                     raise
-                raise NeutralAtomDependencyError(
+                raise NeutralAtomError(
+                    "dependency_missing",
                     "pulser-simulation is required for neutral-atom simulation; "
                     'install ".[quantum]"'
                 ) from exc
@@ -487,60 +475,68 @@ class PulserQutipRunner:
                 pass
 
 
-class QuantumSolver(Solver):
+class QuantumSolver(ComponentSolver):
     """Orchestrate component experiments and return one full-frame selection."""
 
     def __init__(
         self,
         config: NeutralAtomConfig | None = None,
         *,
+        maximum_component_nodes: int = 16,
         runner: NeutralAtomRunner | None = None,
     ) -> None:
+        super().__init__(
+            solver_name="neutral_atom",
+            maximum_component_nodes=maximum_component_nodes,
+        )
         self.config = config if config is not None else NeutralAtomConfig()
         self.runner = runner if runner is not None else PulserQutipRunner(self.config)
-
-    @property
-    def solver_name(self) -> str:
-        return "neutral_atom"
 
     def prepare(self, solver_input: SolverInput) -> tuple[NeutralAtomComponent, ...]:
         """Create stable component matrices without loading Pulser."""
 
+        return self._prepare_components(solver_input, self._components(solver_input))
+
+    def _prepare_components(
+        self,
+        solver_input: SolverInput,
+        clusters: Sequence[GraphCluster],
+    ) -> tuple[NeutralAtomComponent, ...]:
+        """Translate inherited graph components into quantum program inputs."""
+
         return tuple(
             self._component(solver_input, cluster)
-            for cluster in cluster_graph(solver_input.graph)
+            for cluster in clusters
         )
 
     def execute(self, solver_input: SolverInput) -> NeutralAtomExecution:
         """Execute every component atomically and retain optional artifacts."""
 
-        components = self.prepare(solver_input)
+        clusters = self._components(solver_input)
+        components = self._prepare_components(solver_input, clusters)
         simulated_components = tuple(
             component for component in components if not self._is_clique(component)
         )
-        oversized = tuple(
-            component.component_id
-            for component in simulated_components
-            if len(component.node_ids) > self.config.maximum_component_nodes
+        simulated_clusters = tuple(
+            cluster
+            for cluster, component in zip(clusters, components, strict=True)
+            if not self._is_clique(component)
         )
+        oversized = self._oversized_component_ids(simulated_clusters)
         negative_weight_components = tuple(
             component.component_id
             for component in simulated_components
             if any(weight < 0.0 for weight in component.weights)
         )
         base_diagnostics: dict[str, object] = {
+            **self._problem_diagnostics(solver_input, clusters),
             "backend": getattr(self.runner, "backend_name", "injected_runner"),
-            "node_count": len(solver_input.nodes),
-            "edge_count": len(solver_input.edges),
-            "component_count": len(components),
-            "component_sizes": tuple(len(component.node_ids) for component in components),
             "simulated_component_count": len(simulated_components),
             "analytical_clique_component_ids": tuple(
                 component.component_id
                 for component in components
                 if self._is_clique(component)
             ),
-            "maximum_component_nodes": self.config.maximum_component_nodes,
             "optimal": False,
         }
         if oversized:
@@ -584,7 +580,7 @@ class QuantumSolver(Solver):
                     else self.runner.execute(component)
                 )
                 run, diagnostics = self._decode(component, raw_run)
-            except NeutralAtomRunError as exc:
+            except NeutralAtomError as exc:
                 return NeutralAtomExecution(
                     problem_id=solver_input.problem_id,
                     input_fingerprint=solver_input.fingerprint,
@@ -617,19 +613,14 @@ class QuantumSolver(Solver):
     def _select(self, solver_input: SolverInput) -> SolverSelection:
         return self.execute(solver_input).to_selection()
 
-    @staticmethod
     def _component(
+        self,
         solver_input: SolverInput,
         cluster: GraphCluster,
     ) -> NeutralAtomComponent:
         node_ids = cluster.node_ids
-        allowed = set(node_ids)
         weights = tuple(solver_input.graph.node(node_id).weight for node_id in node_ids)
-        edges = tuple(
-            edge
-            for edge in solver_input.edges
-            if edge[0] in allowed and edge[1] in allowed
-        )
+        edges = self._component_edges(solver_input, cluster)
         positions = {node_id: index for index, node_id in enumerate(node_ids)}
         matrix = [[0.0 for _ in node_ids] for _ in node_ids]
         for index, weight in enumerate(weights):
@@ -720,7 +711,8 @@ class QuantumSolver(Solver):
             candidates.append((objective, count, selected, bitstring))
 
         if not candidates:
-            raise NeutralAtomSampleError(
+            raise NeutralAtomError(
+                "no_feasible_sample",
                 f"component {component.component_id} returned no valid feasible sample "
                 f"({invalid_samples} malformed, {infeasible_samples} conflicting)"
             )
@@ -764,18 +756,194 @@ class QuantumSolver(Solver):
         return decoded, diagnostics
 
 
+@dataclass(frozen=True, slots=True)
+class NeutralAtomSequenceFigures:
+    """Files produced by Pulser's potentially multi-figure sequence drawing."""
+
+    output_prefix: Path
+    paths: tuple[Path, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class NeutralAtomVisualizer:
+    """Explicit, reusable renderer for neutral-atom programs and runs."""
+
+    dpi: int = 150
+
+    def __post_init__(self) -> None:
+        if self.dpi < 1:
+            raise ValueError("dpi must be positive")
+
+    def save_register(
+        self,
+        program: NeutralAtomProgram,
+        output: str | Path,
+        *,
+        interaction_amplitude: float = 1.0,
+    ) -> Path:
+        """Save the atom register with its blockade graph and half radii."""
+
+        path = _prepare_visualization_output(output)
+        blockade_radius = program.sequence.device.rydberg_blockade_radius(
+            interaction_amplitude
+        )
+        self._draw(
+            program.register.draw,
+            blockade_radius=blockade_radius,
+            draw_graph=True,
+            draw_half_radius=True,
+            fig_name=str(path),
+        )
+        _require_visualization_output(path, "register")
+        return path
+
+    def save_detuning_map(
+        self,
+        program: NeutralAtomProgram,
+        output: str | Path,
+    ) -> Path:
+        """Save the local detuning weights using the register's qubit labels."""
+
+        path = _prepare_visualization_output(output)
+        self._draw(
+            program.detuning_map.draw,
+            labels=program.register.qubit_ids,
+            fig_name=str(path),
+        )
+        _require_visualization_output(path, "detuning-map")
+        return path
+
+    def save_sequence(
+        self,
+        program: NeutralAtomProgram,
+        output_prefix: str | Path,
+    ) -> NeutralAtomSequenceFigures:
+        """Save pulse, detuning-map, and per-qubit sequence figures."""
+
+        prefix = _prepare_visualization_output(output_prefix)
+        before = {
+            path: (path.stat().st_mtime_ns, path.stat().st_size)
+            for path in _sequence_visualization_outputs(prefix)
+        }
+        self._draw(
+            program.sequence.draw,
+            draw_detuning_maps=True,
+            draw_qubit_det=True,
+            draw_qubit_amp=True,
+            fig_name=str(prefix),
+        )
+        paths = tuple(
+            path
+            for path in _sequence_visualization_outputs(prefix)
+            if before.get(path) != (path.stat().st_mtime_ns, path.stat().st_size)
+        )
+        if not paths:
+            raise RuntimeError("Pulser sequence drawing did not create any figure files")
+        return NeutralAtomSequenceFigures(prefix, paths)
+
+    def save_distribution(
+        self,
+        run: NeutralAtomRun,
+        output: str | Path,
+        *,
+        max_bitstrings: int | None = None,
+    ) -> Path:
+        """Save sampled bitstrings ordered by count and highlight the selection."""
+
+        if max_bitstrings is not None and max_bitstrings < 1:
+            raise ValueError("max_bitstrings must be positive when supplied")
+
+        counts = sorted(
+            run.bitstring_counts,
+            key=lambda item: (-item[1], item[0]),
+        )
+        if max_bitstrings is not None:
+            counts = counts[:max_bitstrings]
+        if not counts:
+            raise ValueError("a distribution requires at least one sampled bitstring")
+
+        path = _prepare_visualization_output(output)
+        bitstrings = [bitstring for bitstring, _ in counts]
+        values = [count for _, count in counts]
+        colors = [
+            "#D1495B" if bitstring == run.selected_bitstring else "#2A9D8F"
+            for bitstring in bitstrings
+        ]
+        plt = _load_pyplot()
+        figure, axis = plt.subplots(
+            figsize=(max(8.0, min(18.0, 0.55 * len(bitstrings))), 6.0)
+        )
+        try:
+            axis.bar(bitstrings, values, width=0.5, color=colors)
+            axis.set_xlabel("Bitstring")
+            axis.set_ylabel("Count")
+            axis.set_title("Neutral-atom sample distribution")
+            axis.tick_params(axis="x", labelrotation=90)
+            figure.tight_layout()
+            figure.savefig(path, dpi=self.dpi, bbox_inches="tight")
+        finally:
+            plt.close(figure)
+        return path
+
+    def _draw(self, draw: Any, **kwargs: object) -> None:
+        """Invoke a Pulser drawing method headlessly and close its figures."""
+
+        plt = _load_pyplot()
+        existing_figures = set(plt.get_fignums())
+        try:
+            draw(
+                **kwargs,
+                kwargs_savefig={"dpi": self.dpi, "bbox_inches": "tight"},
+                show=False,
+            )
+        finally:
+            for figure_number in set(plt.get_fignums()) - existing_figures:
+                plt.close(figure_number)
+
+
+def _load_pyplot() -> Any:
+    """Load Matplotlib only when a visualization is explicitly requested."""
+
+    import matplotlib.pyplot as plt
+
+    return plt
+
+
+def _prepare_visualization_output(output: str | Path) -> Path:
+    path = Path(output)
+    if not path.suffix:
+        path = path.with_suffix(".png")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _sequence_visualization_outputs(prefix: Path) -> tuple[Path, ...]:
+    return tuple(
+        sorted(
+            path
+            for path in prefix.parent.iterdir()
+            if path.is_file()
+            and path.stem.startswith(prefix.stem)
+            and path.suffix == prefix.suffix
+        )
+    )
+
+
+def _require_visualization_output(path: Path, kind: str) -> None:
+    if not path.is_file():
+        raise RuntimeError(f"Pulser {kind} drawing did not create {path}")
+
+
 __all__ = [
     "NeutralAtomComponent",
     "NeutralAtomConfig",
-    "NeutralAtomDependencyError",
-    "NeutralAtomEmbeddingError",
+    "NeutralAtomError",
     "NeutralAtomExecution",
-    "NeutralAtomExecutionError",
     "NeutralAtomProgram",
     "NeutralAtomRun",
-    "NeutralAtomRunError",
     "NeutralAtomRunner",
-    "NeutralAtomSampleError",
+    "NeutralAtomSequenceFigures",
+    "NeutralAtomVisualizer",
     "PulserQutipRunner",
     "QuantumSolver",
 ]

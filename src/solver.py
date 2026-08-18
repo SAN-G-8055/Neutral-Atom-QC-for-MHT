@@ -19,7 +19,7 @@ from time import perf_counter
 from types import MappingProxyType
 from typing import Any, Mapping, final
 
-from graph import ConflictGraph, GraphNode
+from graph import ConflictGraph, GraphCluster, GraphNode, cluster_graph
 
 
 SCHEMA_VERSION = "3.0"
@@ -305,10 +305,14 @@ class SolverComparison:
 class Solver(ABC):
     """Template shared by every maximum-weight-independent-set solver."""
 
+    def __init__(self, solver_name: str) -> None:
+        self._solver_name = _non_empty_string(solver_name, "solver_name")
+
     @property
-    @abstractmethod
     def solver_name(self) -> str:
         """Return the stable name written into every result."""
+
+        return self._solver_name
 
     @final
     def solve(self, solver_input: SolverInput) -> SolverResult:
@@ -345,9 +349,72 @@ class Solver(ABC):
         """Choose an independent set without constructing the public result."""
 
 
+class ComponentSolver(Solver):
+    """Shared foundation for solvers that factor a graph into components."""
+
+    def __init__(
+        self,
+        solver_name: str,
+        maximum_component_nodes: int,
+    ) -> None:
+        super().__init__(solver_name)
+        if maximum_component_nodes < 1:
+            raise ValueError("maximum_component_nodes must be positive")
+        self.maximum_component_nodes = maximum_component_nodes
+
+    def _components(self, solver_input: SolverInput) -> tuple[GraphCluster, ...]:
+        """Split one complete frame graph in deterministic component order."""
+
+        return cluster_graph(solver_input.graph)
+
+    def _problem_diagnostics(
+        self,
+        solver_input: SolverInput,
+        components: tuple[GraphCluster, ...],
+    ) -> dict[str, object]:
+        """Return the component-level fields common to concrete solvers."""
+
+        return {
+            "node_count": len(solver_input.nodes),
+            "edge_count": len(solver_input.edges),
+            "component_count": len(components),
+            "component_sizes": tuple(
+                len(component.node_ids) for component in components
+            ),
+            "maximum_component_nodes": self.maximum_component_nodes,
+        }
+
+    def _component_edges(
+        self,
+        solver_input: SolverInput,
+        component: GraphCluster,
+    ) -> tuple[tuple[int, int], ...]:
+        """Return full-graph edges induced by one component."""
+
+        node_ids = set(component.node_ids)
+        return tuple(
+            edge
+            for edge in solver_input.edges
+            if edge[0] in node_ids and edge[1] in node_ids
+        )
+
+    def _oversized_component_ids(
+        self,
+        components: Iterable[GraphCluster],
+    ) -> tuple[int, ...]:
+        """Return components that exceed this solver's declared capacity."""
+
+        return tuple(
+            component.cluster_id
+            for component in components
+            if len(component.node_ids) > self.maximum_component_nodes
+        )
+
+
 __all__ = [
     "SCHEMA_VERSION",
     "SUCCESS_STATUSES",
+    "ComponentSolver",
     "Solver",
     "SolverComparison",
     "SolverInput",

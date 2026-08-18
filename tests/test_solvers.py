@@ -18,6 +18,7 @@ import pytest
 from classical_solver import ClassicalSolver
 from graph import ConflictGraph, GraphNode
 from solver import (
+    ComponentSolver,
     Solver,
     SolverComparison,
     SolverInput,
@@ -61,9 +62,8 @@ class SameExactSolver(ClassicalSolver):
 class ConflictingSolver(Solver):
     """Deliberately violate independence to exercise template validation."""
 
-    @property
-    def solver_name(self) -> str:
-        return "invalid_conflicting_solver"
+    def __init__(self) -> None:
+        super().__init__("invalid_conflicting_solver")
 
     def _select(self, solver_input: SolverInput) -> SolverSelection:
         return SolverSelection(selected_ids=(2, 3), status="completed")
@@ -71,8 +71,35 @@ class ConflictingSolver(Solver):
 
 def test_solver_is_an_abstract_template_and_classical_solver_inherits_it() -> None:
     with pytest.raises(TypeError):
-        Solver()  # type: ignore[abstract]
-    assert issubclass(ClassicalSolver, Solver)
+        Solver("abstract")  # type: ignore[abstract]
+    assert issubclass(ClassicalSolver, ComponentSolver)
+    assert issubclass(ComponentSolver, Solver)
+
+
+def test_classical_solver_inherits_identity_lifecycle_and_component_helpers() -> None:
+    solver = ClassicalSolver(maximum_component_nodes=4)
+    solver_input = worked_problem()
+    components = solver._components(solver_input)
+
+    assert ClassicalSolver.solve is Solver.solve
+    assert ClassicalSolver.solver_name is Solver.solver_name
+    assert ClassicalSolver._components is ComponentSolver._components
+    assert ClassicalSolver._problem_diagnostics is ComponentSolver._problem_diagnostics
+    assert ClassicalSolver._component_edges is ComponentSolver._component_edges
+    assert (
+        ClassicalSolver._oversized_component_ids
+        is ComponentSolver._oversized_component_ids
+    )
+    assert solver.solver_name == "classical_exact"
+    assert solver.maximum_component_nodes == 4
+    assert solver._oversized_component_ids(components) == (0,)
+    assert solver._problem_diagnostics(solver_input, components) == {
+        "node_count": 5,
+        "edge_count": 7,
+        "component_count": 1,
+        "component_sizes": (5,),
+        "maximum_component_nodes": 4,
+    }
 
 
 def test_solver_input_fingerprint_is_canonical_and_json_safe() -> None:
@@ -134,7 +161,7 @@ def test_base_template_computes_the_objective_with_fsum() -> None:
 
 
 def test_size_limit_is_an_explicit_unsuccessful_result() -> None:
-    result = ClassicalSolver(maximum_nodes=4).solve(worked_problem())
+    result = ClassicalSolver(maximum_component_nodes=4).solve(worked_problem())
 
     assert result.status == "unsupported_size"
     assert result.selected_ids == ()
@@ -157,7 +184,7 @@ def test_classical_solver_clusters_one_full_frame_input_internally() -> None:
     )
     solver_input = SolverInput("disconnected-frame", 3, graph)
 
-    result = ClassicalSolver(maximum_nodes=2).solve(solver_input)
+    result = ClassicalSolver(maximum_component_nodes=2).solve(solver_input)
 
     assert result.successful
     assert result.selected_ids == (1, 2, 4)

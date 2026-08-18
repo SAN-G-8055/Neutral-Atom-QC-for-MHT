@@ -461,7 +461,7 @@ def test_complete_component_uses_the_exact_clique_shortcut() -> None:
     )
 
     result = QuantumSolver(
-        config=NeutralAtomConfig(maximum_component_nodes=2),
+        maximum_component_nodes=2,
         runner=runner,
     ).solve(solver_input)
 

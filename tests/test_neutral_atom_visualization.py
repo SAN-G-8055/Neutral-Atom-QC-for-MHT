@@ -14,7 +14,8 @@ import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 import pytest
 
-from neutral_atom_visualization import NeutralAtomVisualizer
+from neutral_atom import NeutralAtomVisualizer
+from neutral_atom_mht import NeutralAtomVisualizer as PublicNeutralAtomVisualizer
 
 
 class FakeDrawable:
@@ -71,6 +72,11 @@ def _program() -> FakeProgram:
     register = FakeDrawable()
     register.qubit_ids = ("q0", "q1")  # type: ignore[attr-defined]
     return FakeProgram(register, FakeDrawable(), FakeSequence())
+
+
+def test_visualizer_is_exposed_from_the_merged_module_and_public_facade() -> None:
+    assert NeutralAtomVisualizer.__module__ == "neutral_atom"
+    assert PublicNeutralAtomVisualizer is NeutralAtomVisualizer
 
 
 def test_visualizer_saves_all_program_views_without_showing_figures(tmp_path) -> None:
