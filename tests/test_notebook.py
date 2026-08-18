@@ -61,6 +61,9 @@ def test_notebook_has_clean_ordered_workflow_and_figure_cells() -> None:
         "config",
         "run",
         "run_many",
+        "overnight_intro",
+        "overnight_config",
+        "overnight_run",
         "publication_figures",
         "figure_setup",
         "fig1_workflow",
@@ -69,11 +72,13 @@ def test_notebook_has_clean_ordered_workflow_and_figure_cells() -> None:
         "fig3_conflict_graph",
         "fig4_neutral_atoms",
         "fig5_performance",
-        "fig6_likelihood",
+        "fig6_eligibility",
+        "fig7_detection",
+        "fig8_runtime",
     ]
     assert [
         index for index, cell in enumerate(cells) if cell["cell_type"] == "markdown"
-    ] == [0, 6]
+    ] == [0, 6, 9]
     code_cells = [cell for cell in cells if cell["cell_type"] == "code"]
     assert all(cell.get("execution_count") is None for cell in code_cells)
     assert all(cell.get("outputs") == [] for cell in code_cells)
@@ -120,12 +125,11 @@ def test_notebook_figures_are_reproducible_and_compare_the_same_graph() -> None:
     assert '"fig1_workflow.png"' in cells["fig1_workflow"]
     assert '"fig2_detection_overlays.png"' in cells["fig2_detections"]
     assert "Real sequence not installed" in cells["fig2_detections"]
-    assert "figure_noise_levels = (0.00, 0.05, 0.10, 0.15)" in cells["figure_analysis"]
-    assert "quantum_benchmark.execute(solver_input)" in cells["figure_analysis"]
-    assert "exact_benchmark.solve(solver_input)" in cells["figure_analysis"]
-    assert "reference.advance(prepared_benchmark, exact_result)" in cells["figure_analysis"]
+    assert "SyntheticDataGenerator(QUANTUM_DEMO_DATA_CONFIG).iter_frames()" in cells["figure_analysis"]
+    assert "example_quantum_solver.execute(" in cells["figure_analysis"]
+    assert "example_exact_solver.solve(prepared_frame.solver_input())" in cells["figure_analysis"]
+    assert "example_reference.advance(prepared_frame, exact_result)" in cells["figure_analysis"]
     assert "run.program is not None" in cells["figure_analysis"]
-    assert "else np.nan" in cells["figure_analysis"]
     assert '"fig3_conflict_graph.png"' in cells["fig3_conflict_graph"]
     assert "logical_layout(example_graph)" in cells["fig3_conflict_graph"]
     assert '"fig4_neutral_atom_embedding.png"' in cells["fig4_neutral_atoms"]
@@ -133,10 +137,50 @@ def test_notebook_figures_are_reproducible_and_compare_the_same_graph() -> None:
     assert "program.omega" in cells["fig4_neutral_atoms"]
     assert "blockade_distance / 2.0" in cells["fig4_neutral_atoms"]
     assert "intended_edges & physical_edges" in cells["fig4_neutral_atoms"]
-    assert '"fig5_performance_vs_exact.png"' in cells["fig5_performance"]
-    assert "quantum objective / exact objective" in cells["fig5_performance"]
-    assert '"fig6_cumulative_association_score.png"' in cells["fig6_likelihood"]
-    assert "cumulative MWIS gain over all-missed baseline" in cells["fig6_likelihood"]
+    assert '"fig5_objective_ratio_heatmap.png"' in cells["fig5_performance"]
+    assert '"relative_objective"' in cells["fig5_performance"]
+    assert "quantum_n_matrix" in cells["fig5_performance"]
+    assert "prepared/planned exact frames" in cells["fig5_performance"]
+    assert '"fig6_quantum_eligibility_heatmap.png"' in cells["fig6_eligibility"]
+    assert "maximum_nonclique_component_nodes" in cells["fig6_eligibility"]
+    assert 'row.get("input_fingerprint") is not None' in cells["fig6_eligibility"]
+    assert "eligibility_annotations" in cells["fig6_eligibility"]
+    assert '"fig7_detection_and_tracking_quality.png"' in cells["fig7_detection"]
+    assert '"detection_recall"' in cells["fig7_detection"]
+    assert "prepared_benchmark_rows" in cells["fig7_detection"]
+    assert '"matched_track_gt_identity_correctness"' in cells["fig7_detection"]
+    assert '"cumulative_id_switch_count"' in cells["fig7_detection"]
+    assert '"cumulative_fragmentation_count"' in cells["fig7_detection"]
+    assert '"fig8_runtime_by_component_size.png"' in cells["fig8_runtime"]
+    assert '"quantum_runtime_seconds"' in cells["fig8_runtime"]
+    assert '("exact_status", "optimal")' in cells["fig8_runtime"]
+    assert '("quantum_status", "completed")' in cells["fig8_runtime"]
+
+
+def test_notebook_defines_a_resumable_broad_overnight_campaign() -> None:
+    cells = {cell["id"]: _source(cell) for cell in _payload()["cells"]}
+    campaign = cells["overnight_config"]
+
+    assert 'BENCHMARK_PROFILE = "overnight"' in campaign
+    assert '("motion", "dropout", "clutter", "sensor_noise", "combined")' in campaign
+    assert "BENCHMARK_SEVERITIES = (0.2, 0.4, 0.6, 0.8, 1.0)" in campaign
+    assert "BENCHMARK_OBJECT_COUNTS = (4, 12, 30, 55)" in campaign
+    assert "BENCHMARK_SEEDS = tuple(range(5))" in campaign
+    assert "BENCHMARK_FRAME_COUNT = 40" in campaign
+    assert "QUANTUM_QUOTA_PER_STRATUM = 5" in campaign
+    assert "BENCHMARK_FORWARD_WORK_HOURS = 10.0" in campaign
+    assert "forward_work_budget_seconds=BENCHMARK_FORWARD_WORK_HOURS" in campaign
+    assert "quantum_quota_per_stratum=QUANTUM_QUOTA_PER_STRATUM" in campaign
+    assert "build_synthetic_scenarios(" in campaign
+    assert 'axes=("baseline", *BENCHMARK_AXES)' in campaign
+    assert "exact_maximum_component_nodes=128" in campaign
+    assert "quantum_max_nonclique_component_nodes=8" in campaign
+    assert "store_detailed_records=False" in campaign
+    assert "resume=True" in campaign
+    assert "run_overnight_benchmark(" in cells["overnight_run"]
+    assert "progress=lambda update: print(update, flush=True)" in cells["overnight_run"]
+    assert "overnight_result.database_path" in cells["overnight_run"]
+    assert "overnight_result.csv_path" in cells["overnight_run"]
 
 
 @pytest.mark.filterwarnings(

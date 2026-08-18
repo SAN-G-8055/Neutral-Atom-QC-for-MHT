@@ -7,6 +7,7 @@ and workflows.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from heapq import heappop, heappush
 from pathlib import Path
@@ -26,11 +27,24 @@ _MARKER_RADIUS_PX = 1
 _REGION_FRACTION = 0.40
 _TURN_SIGMA_RAD = 0.16
 _MAX_TRACKING_LABEL = int(np.iinfo(np.uint16).max)
+# Stable, distinct stream identifiers.  These IDs retain the versioned quantum
+# smoke topology while keeping the effects statistically and operationally
+# separate.
+_DROPOUT_STREAM_ID = 17
+_AMPLITUDE_STREAM_ID = 118
+_CLUTTER_STREAM_ID = 228
+_SENSOR_NOISE_STREAM_ID = 324
 
 
 @dataclass(frozen=True, slots=True)
 class SyntheticDataConfig:
-    """Configuration for one reproducible synthetic tracking sequence."""
+    """Configuration for one reproducible synthetic tracking sequence.
+
+    ``noise`` is the convenient coupled difficulty control retained for the
+    small demo.  Any ``*_override`` value replaces just that derived effect,
+    which lets factorial benchmarks distinguish motion, dropout, clutter, and
+    sensor noise.
+    """
 
     noise: float = 0.6
     frame_count: int = 40
@@ -39,6 +53,10 @@ class SyntheticDataConfig:
     dataset_name: str = "SYN-MHT"
     sequence: str = "01"
     image_shape: tuple[int, int] = (576, 720)
+    speed_px_per_frame_override: float | None = None
+    detection_probability_override: float | None = None
+    clutter_per_frame_override: float | None = None
+    pixel_noise_sigma_override: float | None = None
 
     def __post_init__(self) -> None:
         if not 0.0 <= self.noise <= 1.0:
@@ -49,6 +67,46 @@ class SyntheticDataConfig:
             raise ValueError("object_count must be positive")
         if len(self.image_shape) != 2 or min(self.image_shape) < 1:
             raise ValueError("image_shape must contain two positive dimensions")
+        if (
+            self.speed_px_per_frame_override is not None
+            and (
+                not np.isfinite(self.speed_px_per_frame_override)
+                or self.speed_px_per_frame_override <= 0.0
+            )
+        ):
+            raise ValueError(
+                "speed_px_per_frame_override must be finite and positive"
+            )
+        if (
+            self.detection_probability_override is not None
+            and (
+                not np.isfinite(self.detection_probability_override)
+                or not 0.0 <= self.detection_probability_override <= 1.0
+            )
+        ):
+            raise ValueError(
+                "detection_probability_override must be finite and lie in [0, 1]"
+            )
+        if (
+            self.clutter_per_frame_override is not None
+            and (
+                not np.isfinite(self.clutter_per_frame_override)
+                or self.clutter_per_frame_override < 0.0
+            )
+        ):
+            raise ValueError(
+                "clutter_per_frame_override must be finite and non-negative"
+            )
+        if (
+            self.pixel_noise_sigma_override is not None
+            and (
+                not np.isfinite(self.pixel_noise_sigma_override)
+                or self.pixel_noise_sigma_override < 0.0
+            )
+        ):
+            raise ValueError(
+                "pixel_noise_sigma_override must be finite and non-negative"
+            )
         if self.object_count > _MAX_TRACKING_LABEL:
             raise ValueError(
                 f"object_count cannot exceed the uint16 label limit "
@@ -73,18 +131,26 @@ class SyntheticDataConfig:
 
     @property
     def speed_px_per_frame(self) -> float:
+        if self.speed_px_per_frame_override is not None:
+            return float(self.speed_px_per_frame_override)
         return 2.5 + 14.0 * self.noise
 
     @property
     def detection_probability(self) -> float:
+        if self.detection_probability_override is not None:
+            return float(self.detection_probability_override)
         return 0.98 - 0.36 * self.noise
 
     @property
     def clutter_per_frame(self) -> float:
+        if self.clutter_per_frame_override is not None:
+            return float(self.clutter_per_frame_override)
         return 36.0 * self.noise
 
     @property
     def pixel_noise_sigma(self) -> float:
+        if self.pixel_noise_sigma_override is not None:
+            return float(self.pixel_noise_sigma_override)
         return 1.5 + 6.0 * self.noise
 
 
@@ -168,16 +234,7 @@ class SyntheticDataGenerator:
         dataset.raw_directory.mkdir(parents=True, exist_ok=True)
         dataset.tracking_directory.mkdir(parents=True, exist_ok=True)
 
-        rng = np.random.default_rng(self.config.seed)
-        trajectories = self._generate_trajectories(rng)
-        background = self._background()
-        for frame in range(self.config.frame_count):
-            image, labels = self._render_frame(
-                frame,
-                trajectories,
-                background,
-                rng,
-            )
+        for frame, (image, labels) in enumerate(self.iter_frames()):
             Image.fromarray(image).save(dataset.raw_frame_path(frame))
             Image.fromarray(labels).save(dataset.tracking_frame_path(frame))
 
@@ -188,6 +245,67 @@ class SyntheticDataGenerator:
         )
         dataset.track_manifest_path.write_text(manifest, encoding="utf-8")
         return dataset
+
+    def iter_frames(self) -> Iterator[tuple[np.ndarray, np.ndarray]]:
+        """Yield deterministic image/label pairs without writing TIFF files.
+
+        Streaming is useful for large parameter sweeps: only one rendered frame
+        is resident at a time, while :meth:`generate` remains the convenient
+        Cell Tracking Challenge-compatible on-disk interface.
+        """
+
+        trajectory_rng = np.random.default_rng(self.config.seed)
+        trajectories = self._generate_trajectories(trajectory_rng)
+        background = self._background()
+
+        # Preserve the exact byte stream of the original/default datasets,
+        # including the versioned quantum demo. Benchmark scenarios set every
+        # override explicitly and take the independent-stream path below.
+        if self._uses_legacy_random_stream():
+            for frame in range(self.config.frame_count):
+                yield self._render_frame_legacy(
+                    frame,
+                    trajectories,
+                    background,
+                    trajectory_rng,
+                )
+            return
+
+        # Keep each benchmark effect on its own deterministic stream.  Paired
+        # scenarios can then vary motion, dropout, clutter, or sensor noise
+        # without silently changing unrelated latent draws.
+        dropout_rng = self._effect_rng(_DROPOUT_STREAM_ID)
+        amplitude_rng = self._effect_rng(_AMPLITUDE_STREAM_ID)
+        clutter_rng = self._effect_rng(_CLUTTER_STREAM_ID)
+        sensor_noise_rng = self._effect_rng(_SENSOR_NOISE_STREAM_ID)
+        for frame in range(self.config.frame_count):
+            yield self._render_frame(
+                frame,
+                trajectories,
+                background,
+                dropout_rng=dropout_rng,
+                amplitude_rng=amplitude_rng,
+                clutter_rng=clutter_rng,
+                sensor_noise_rng=sensor_noise_rng,
+            )
+
+    def _uses_legacy_random_stream(self) -> bool:
+        return all(
+            value is None
+            for value in (
+                self.config.speed_px_per_frame_override,
+                self.config.detection_probability_override,
+                self.config.clutter_per_frame_override,
+                self.config.pixel_noise_sigma_override,
+            )
+        )
+
+    def _effect_rng(self, stream_id: int) -> np.random.Generator:
+        """Return a stable effect-specific stream derived from the scene seed."""
+
+        return np.random.default_rng(
+            np.random.SeedSequence((self.config.seed, stream_id))
+        )
 
     def _generate_trajectories(self, rng: np.random.Generator) -> np.ndarray:
         config = self.config
@@ -273,8 +391,73 @@ class SyntheticDataGenerator:
         frame: int,
         trajectories: np.ndarray,
         background: np.ndarray,
+        *,
+        dropout_rng: np.random.Generator,
+        amplitude_rng: np.random.Generator,
+        clutter_rng: np.random.Generator,
+        sensor_noise_rng: np.random.Generator,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        config = self.config
+        image = background.copy()
+        labels = np.zeros(config.image_shape, dtype=np.uint16)
+        free_label_pixels = config.height * config.width
+
+        for object_index, (x, y) in enumerate(trajectories[frame]):
+            object_id = object_index + 1
+            previous = trajectories[max(0, frame - 1), object_index]
+            angle = (
+                np.arctan2(y - previous[1], x - previous[0])
+                if frame > 0
+                else 0.0
+            )
+            row, column = int(round(y)), int(round(x))
+            used_pixels = self._place_tracking_marker(
+                labels,
+                row,
+                column,
+                object_id,
+                free_pixels=free_label_pixels,
+                remaining_objects=config.object_count - object_id,
+            )
+            free_label_pixels -= used_pixels
+
+            # Draw amplitude even for a dropped object so changing dropout does
+            # not shift later objects' latent brightness values.
+            amplitude = _BLOB_AMPLITUDE * amplitude_rng.uniform(0.85, 1.15)
+            if dropout_rng.random() <= config.detection_probability:
+                self._add_blob(
+                    image,
+                    x,
+                    y,
+                    angle,
+                    amplitude,
+                )
+
+        for _ in range(clutter_rng.poisson(config.clutter_per_frame)):
+            self._add_blob(
+                image,
+                clutter_rng.uniform(0.0, config.width),
+                clutter_rng.uniform(0.0, config.height),
+                clutter_rng.uniform(0.0, 2.0 * np.pi),
+                _BLOB_AMPLITUDE * clutter_rng.uniform(0.6, 1.0),
+            )
+
+        image += sensor_noise_rng.normal(
+            0.0,
+            config.pixel_noise_sigma,
+            image.shape,
+        )
+        return np.clip(image, 0.0, 255.0).astype(np.uint8), labels
+
+    def _render_frame_legacy(
+        self,
+        frame: int,
+        trajectories: np.ndarray,
+        background: np.ndarray,
         rng: np.random.Generator,
     ) -> tuple[np.ndarray, np.ndarray]:
+        """Render the pre-override byte stream for cached dataset compatibility."""
+
         config = self.config
         image = background.copy()
         labels = np.zeros(config.image_shape, dtype=np.uint16)

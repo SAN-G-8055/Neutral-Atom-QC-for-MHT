@@ -27,6 +27,19 @@ from neutral_atom import (
     PulserQutipRunner,
     QuantumSolver,
 )
+from overnight_benchmark import (
+    BENCHMARK_SCHEMA_VERSION,
+    DEFAULT_AXES,
+    DEFAULT_BENCHMARK_OUTPUT,
+    DEFAULT_OBJECT_COUNTS,
+    DEFAULT_SEEDS,
+    DEFAULT_SEVERITY_LEVELS,
+    BenchmarkResult,
+    BenchmarkScenario,
+    OvernightBenchmarkConfig,
+    build_synthetic_scenarios,
+    run_overnight_benchmark,
+)
 from solver import (
     ComponentSolver,
     Solver,
@@ -44,9 +57,17 @@ from synthetic_data import (
 )
 
 __all__ = [
+    "BENCHMARK_SCHEMA_VERSION",
+    "BenchmarkResult",
+    "BenchmarkScenario",
     "ClassicalSolver",
     "ComponentSolver",
+    "DEFAULT_AXES",
+    "DEFAULT_BENCHMARK_OUTPUT",
     "DEFAULT_SYNTHETIC_DATA_ROOT",
+    "DEFAULT_OBJECT_COUNTS",
+    "DEFAULT_SEEDS",
+    "DEFAULT_SEVERITY_LEVELS",
     "HPC",
     "HPCConfig",
     "NeutralAtomComponent",
@@ -59,6 +80,7 @@ __all__ = [
     "NeutralAtomSequenceFigures",
     "NeutralAtomVisualizer",
     "Observation",
+    "OvernightBenchmarkConfig",
     "PulserQutipRunner",
     "QUANTUM_DEMO_DATA_CONFIG",
     "QuantumSolver",
@@ -71,5 +93,7 @@ __all__ = [
     "SyntheticDataGenerator",
     "SyntheticDataset",
     "TrackState",
+    "build_synthetic_scenarios",
     "hpc",
+    "run_overnight_benchmark",
 ]
