@@ -1,0 +1,31 @@
+# ---- Claude Code / editor local state ---------------------------------------
+.claude/
+.vscode/
+*.jsonl
+
+# ---- Python environments and caches -----------------------------------------
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# ---- large data (GitHub rejects files over 100 MB) --------------------------
+# Cell Tracking Challenge data: download from celltrackingchallenge.net
+*.zip
+SyntheticData/
+
+# ---- LaTeX build artefacts ---------------------------------------------------
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+
+# ---- OS junk -----------------------------------------------------------------
+.DS_Store
+Thumbs.db
+*.swp
