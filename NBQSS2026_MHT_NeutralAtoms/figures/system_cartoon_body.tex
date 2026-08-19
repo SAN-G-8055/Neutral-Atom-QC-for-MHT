@@ -1,0 +1,205 @@
+% =============================================================================
+%  System architecture -- PICTORIAL variant, for ONE COLUMN of an A1
+%  three-column poster (column ~18 cm wide).  Drawn at FINAL SIZE.
+%
+%      \usepackage{tikz}
+%      \usetikzlibrary{positioning,arrows.meta,fit,backgrounds,calc}
+%      \input{system_cartoon_body}
+%
+%  Do NOT \resizebox: the fonts are chosen to match a 19 pt poster body.
+% =============================================================================
+\providecommand{\cttl}[1]{{\fontsize{15.5}{18}\selectfont\bfseries #1}}
+\providecommand{\csub}[1]{{\fontsize{12.5}{15}\selectfont #1}}
+\providecommand{\clbl}[1]{{\fontsize{14.5}{17}\selectfont\bfseries #1}}
+
+\definecolor{nbblue}{HTML}{123B63}
+\definecolor{nbaccent}{HTML}{2A78D6}
+\definecolor{nbwarm}{HTML}{EB6834}
+\definecolor{nbgreen}{HTML}{1BAF7A}
+\definecolor{nblight}{HTML}{EDF3FA}
+\definecolor{nbgrey}{HTML}{5A5A57}
+
+\begin{tikzpicture}[
+  every node/.append style={inner sep=2pt},
+  font=\sffamily,
+  panel/.style ={draw, rounded corners=6pt, line width=1.1pt},
+  pS/.style ={panel, draw=nbaccent, fill=nbaccent!7, minimum width=83mm, minimum height=40mm},
+  pD/.style ={panel, draw=nbgrey,   fill=black!4,    minimum width=83mm, minimum height=26mm},
+  pC/.style ={panel, draw=nbblue,   fill=nbblue!9,   line width=1.5pt, minimum width=162mm, minimum height=52mm},
+  pA/.style ={panel, draw=nbgreen,  fill=nbgreen!8,  minimum width=83mm, minimum height=42mm},
+  pB/.style ={panel, draw=nbwarm,   fill=nbwarm!8,   minimum width=83mm, minimum height=42mm},
+  pR/.style ={panel, draw=nbblue,   fill=nblight,    line width=1.5pt, minimum width=162mm, minimum height=38mm},
+  arr/.style={-{Stealth[length=4.2mm,width=3.2mm]}, line width=1.3pt, draw=nbgrey},
+  bus/.style={line width=1.3pt, draw=nbgrey},
+  txt/.style={anchor=west, align=left},
+  %
+  % --------------------------- cartoon icons ---------------------------------
+  radar/.pic={
+    \foreach \r in {0.34,0.60,0.86}
+      \draw[nbaccent, line width=1.1pt] (12:\r) arc (12:168:\r);
+    \draw[nbaccent, line width=1.6pt] (0,0) -- (62:1.02);
+    \fill[nbwarm] (40:0.70) circle (0.085);
+    \fill[nbwarm] (100:0.48) circle (0.085);
+    \fill[nbwarm] (140:0.76) circle (0.085);
+    \draw[nbblue, line width=1.9pt] (-0.30,0) -- (0.30,0);
+  },
+  cells/.pic={
+    \draw[nbgreen, line width=1.5pt] (0,0) circle (0.90);
+    \foreach \x/\y/\a in {-0.38/0.22/20, 0.30/0.36/-35, 0.44/-0.16/55,
+                          -0.44/-0.22/-15, 0.02/-0.02/75, -0.06/0.52/-5,
+                          0.20/-0.50/30}
+      \fill[nbgreen!60, rotate around={\a:(\x,\y)}]
+            (\x,\y) ellipse [x radius=0.21, y radius=0.09];
+  },
+  crosshair/.pic={
+    \fill[nbgrey!45] (0,0) ellipse [x radius=0.30, y radius=0.15];
+    \draw[nbwarm, line width=1.5pt] (0,0) circle (0.52);
+    \foreach \a in {0,90,180,270}
+      \draw[nbwarm, line width=1.5pt] (\a:0.60) -- (\a:0.82);
+  },
+  dots/.pic={
+    \foreach \x/\y in {-0.50/0.26, -0.14/-0.20, 0.22/0.32, 0.56/-0.08,
+                       -0.38/-0.38, 0.42/0.56, 0.04/-0.52}
+      \fill[nbgrey!75] (\x,\y) circle (0.088);
+  },
+  trax/.pic={
+    \draw[nbaccent, line width=1.5pt] (-0.60,-0.28) -- (-0.17,0.03) -- (0.26,0.37) -- (0.62,0.48);
+    \draw[nbwarm, line width=1.5pt, dashed] (-0.60,-0.28) -- (-0.14,-0.42) -- (0.29,-0.14) -- (0.62,0.08);
+    \foreach \x/\y in {-0.60/-0.28, -0.17/0.03, 0.26/0.37, 0.62/0.48,
+                       -0.14/-0.42, 0.29/-0.14, 0.62/0.08}
+      \fill[nbblue] (\x,\y) circle (0.078);
+  },
+  cgraph/.pic={
+    \coordinate (g1) at (-0.50,0.38); \coordinate (g2) at (0.10,0.54);
+    \coordinate (g3) at (0.58,0.08);  \coordinate (g4) at (-0.14,-0.20);
+    \coordinate (g5) at (-0.62,-0.32);
+    \draw[nbgrey, line width=1.2pt] (g1)--(g2) (g2)--(g3) (g1)--(g4) (g4)--(g3) (g4)--(g5);
+    \foreach \g in {g1,g2,g3,g4,g5} \fill[nbblue] (\g) circle (0.105);
+  },
+  cpu/.pic={
+    \draw[nbgreen, line width=1.6pt, rounded corners=2pt] (-0.52,-0.52) rectangle (0.52,0.52);
+    \draw[nbgreen, line width=1.3pt] (-0.23,-0.23) rectangle (0.23,0.23);
+    \foreach \i in {-0.29,0,0.29}{
+      \draw[nbgreen, line width=1.3pt] (\i,0.52)--(\i,0.74);
+      \draw[nbgreen, line width=1.3pt] (\i,-0.52)--(\i,-0.74);
+      \draw[nbgreen, line width=1.3pt] (0.52,\i)--(0.74,\i);
+      \draw[nbgreen, line width=1.3pt] (-0.52,\i)--(-0.74,\i);}
+  },
+  atoms/.pic={
+    \draw[nbwarm!75, line width=2pt, -{Stealth[length=3mm,width=2.4mm]}]
+          (0,1.12) -- (0,0.62);
+    \foreach \p in {(-0.72,-0.40),(0,-0.40),(0.72,-0.40),(-0.36,0.26),(0.36,0.26)}
+      \fill[nbgrey!45] \p circle (0.105);
+    \draw[nbwarm, line width=1.3pt, dashed] (-0.36,0.26) circle (0.38);
+    \fill[nbwarm] (-0.36,0.26) circle (0.145);
+    \fill[nbwarm] (0.72,-0.40) circle (0.145);
+  },
+  podium/.pic={
+    \fill[nbblue]    (-0.66,0) rectangle (-0.24,0.86);
+    \fill[nbblue!60] (-0.17,0) rectangle ( 0.25,0.56);
+    \fill[nbblue!32] ( 0.32,0) rectangle ( 0.74,0.30);
+    \draw[nbblue, line width=1.4pt] (-0.78,0) -- (0.86,0);
+  },
+]
+
+% ===================== SOURCES: four datasets, two lineages =================
+\node[pS] (pL) at (-4.35, 0) {};
+\pic[scale=1.32] at (-7.05,-0.55) {radar};
+\node[txt, text width=54mm] at (-5.85, 0)
+  {\cttl{Radar \& point datasets}\\[5pt]
+   \csub{\textbf{RADIATE} \texttt{tiny\_foggy}}\\[-2pt]
+   \csub{real automotive radar in fog}\\[4pt]
+   \csub{\textbf{synthetic point generator}}\\[-2pt]
+   \csub{controlled tracks and clutter}};
+
+\node[pS] (pR) at ( 4.35, 0) {};
+\pic[scale=1.32] at ( 1.62, 0) {cells};
+\node[txt, text width=54mm] at ( 2.85, 0)
+  {\cttl{Image datasets}\\[5pt]
+   \csub{\textbf{\texttt{PhC-C2DL-PSC}}}\\[-2pt]
+   \csub{real cell microscopy, 300 frames}\\[4pt]
+   \csub{\textbf{\texttt{SyntheticMHTData.py}}}\\[-2pt]
+   \csub{synthetic frames, tunable noise}};
+
+% ===================== DETECTION ============================================
+\node[pD] (det) at (4.35,-5.00) {};
+\pic[scale=1.30] at (1.62,-5.00) {crosshair};
+\node[txt, text width=54mm] at (2.85,-5.00)
+  {\cttl{Find the blobs}\\[4pt]
+   \csub{turns pixels into points:}\\[-2pt]
+   \csub{background subtraction, then}\\[-2pt]
+   \csub{connected components}};
+
+% ===================== SHARED FRONT END =====================================
+\node[pC] (core) at (0,-10.50) {};
+\node[align=center, text width=155mm] at (0,-8.55)
+  {{\fontsize{18}{21}\selectfont\bfseries Shared classical MHT front end}};
+\pic[scale=1.65] at (-5.35,-10.75) {dots};
+\pic[scale=1.65] at ( 0.00,-10.75) {trax};
+\pic[scale=1.65] at ( 5.35,-10.75) {cgraph};
+\node[align=center, text width=46mm] at (-5.35,-12.35) {\csub{detections}};
+\node[align=center, text width=50mm] at ( 0.00,-12.35) {\csub{candidate tracks}};
+\node[align=center, text width=46mm] at ( 5.35,-12.35) {\csub{conflict graph}};
+\draw[arr] (-3.95,-10.75) -- (-1.35,-10.75);
+\draw[arr] ( 1.35,-10.75) -- ( 3.85,-10.75);
+
+% ===================== TWO SOLVERS ==========================================
+\node[pA] (A) at (-4.35,-16.80) {};
+\pic[scale=1.34] at (-7.05,-16.80) {cpu};
+\node[txt, text width=54mm] at (-5.85,-16.80)
+  {\cttl{Ordinary computer}\\[5pt]
+   \csub{solves the graph exactly:}\\[-2pt]
+   \csub{MILP / max-weight clique,}\\[-2pt]
+   \csub{then lists the top-$K$ best}\\[-2pt]
+   \csub{compatible sets of tracks}};
+
+\node[pB] (B) at ( 4.35,-16.80) {};
+\pic[scale=1.32] at ( 1.62,-17.10) {atoms};
+\node[txt, text width=54mm] at ( 2.85,-16.80)
+  {\cttl{Atoms \& lasers}\\[5pt]
+   \csub{one atom per candidate track;}\\[-2pt]
+   \csub{clashing tracks sit close, so the}\\[-2pt]
+   \csub{Rydberg blockade forbids both.}\\[-2pt]
+   \csub{Laser sweep, then many shots}};
+
+% ===================== OUTPUT ===============================================
+\node[pR] (res) at (0,-22.30) {};
+\pic[scale=1.35] at (-6.05,-22.75) {podium};
+\node[txt, text width=124mm] at (-4.65,-22.30)
+  {\cttl{Ranked global hypotheses}\\[5pt]
+   \csub{the best set of compatible tracks, plus the runners-up,}\\[-2pt]
+   \csub{each with its probability $P\{H_j\}$ and $P\{T_i\}$}\\[4pt]
+   \csub{\textit{the two solvers are compared on:} which answer they find,}\\[-2pt]
+   \csub{the cost per answer, and whether the graph could be embedded}};
+
+% ===================== FLOW =================================================
+\draw[arr] (pR.south) -- (det.north);
+\coordinate (bL) at (-4.35,-7.30);
+\coordinate (bR) at ( 4.35,-7.30);
+\draw[bus] (pL.south) -- (bL);
+\draw[bus] (det.south) -- (bR);
+\draw[bus] (bL) -- (bR);
+\draw[arr] (0,-7.30) -- (core.north);
+\node[fill=white, inner sep=3pt, text=nbgrey] at (0,-7.30)
+      {\clbl{one puzzle per cluster of tangled tracks}};
+
+\coordinate (cL) at (-4.35,-14.10);
+\coordinate (cR) at ( 4.35,-14.10);
+\draw[bus] (core.south) -- (0,-14.10);
+\draw[bus] (cL) -- (cR);
+\draw[arr] (cL) -- (A.north);
+\draw[arr] (cR) -- (B.north);
+\node[fill=white, inner sep=3pt, text=nbgrey] at (0,-14.10)
+      {\clbl{same puzzle, two solvers}};
+
+\coordinate (dL) at (-4.35,-20.05);
+\coordinate (dR) at ( 4.35,-20.05);
+\draw[bus] (A.south) -- (dL);
+\draw[bus] (B.south) -- (dR);
+\draw[bus] (dL) -- (dR);
+\draw[arr] (0,-20.05) -- (res.north);
+
+% ===================== LINEAGE LABELS =======================================
+\node[text=nbaccent,         above=2mm of pL] {\clbl{point-detection lineage}};
+\node[text=nbgreen!55!black, above=2mm of pR] {\clbl{image lineage}};
+\end{tikzpicture}
