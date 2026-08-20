@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neutral-atom-mht"
+version = "0.1.0"
+description = "Interpretable cell detection and solver-independent hypothesis processing"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "matplotlib>=3.8",
+    "numpy>=2.0",
+    "Pillow>=11.0",
+    "scipy>=1.14",
+]
+
+[project.optional-dependencies]
+notebook = ["ipykernel>=6", "jupyterlab>=4"]
+quantum = ["pulser-core>=1.8,<2", "pulser-simulation>=1.8,<2"]
+test = ["ipykernel>=6", "nbclient>=0.10", "nbformat>=5.10", "pytest>=8.0"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+py-modules = [
+    "_version",
+    "cell_data",
+    "classical_solver",
+    "detection",
+    "filtering",
+    "gating",
+    "graph",
+    "hpc",
+    "likelihood",
+    "models",
+    "neutral_atom",
+    "neutral_atom_mht",
+    "overnight_benchmark",
+    "solver",
+    "synthetic_data",
+]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+pythonpath = ["src"]
+testpaths = ["tests"]
