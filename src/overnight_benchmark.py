@@ -41,7 +41,7 @@ from solver import SUCCESS_STATUSES, SolverResult
 from synthetic_data import SyntheticDataConfig, SyntheticDataGenerator
 
 
-BENCHMARK_SCHEMA_VERSION = "2.1"
+BENCHMARK_SCHEMA_VERSION = "2.2"
 DEFAULT_BENCHMARK_OUTPUT = Path("outputs") / "overnight_benchmark"
 DEFAULT_AXES = (
     "baseline",
@@ -248,6 +248,7 @@ class OvernightBenchmarkConfig:
     output_directory: Path = DEFAULT_BENCHMARK_OUTPUT
     database_filename: str = "benchmark.sqlite3"
     csv_filename: str = "benchmark_results.csv"
+    exact_checkpoint_source: Path | None = None
     hpc_config: HPCConfig = field(default_factory=HPCConfig)
     match_distance_px: float = 8.0
     exact_maximum_component_nodes: int = 64
@@ -270,6 +271,12 @@ class OvernightBenchmarkConfig:
             raise ValueError("scenario names must be unique")
         object.__setattr__(self, "scenarios", scenarios)
         object.__setattr__(self, "output_directory", Path(self.output_directory))
+        if self.exact_checkpoint_source is not None:
+            object.__setattr__(
+                self,
+                "exact_checkpoint_source",
+                Path(self.exact_checkpoint_source),
+            )
         for name in ("database_filename", "csv_filename"):
             value = str(getattr(self, name))
             if not value or value in {".", ".."} or Path(value).name != value:
@@ -379,12 +386,15 @@ def run_overnight_benchmark(
     """Run or resume a benchmark and export one joined tidy CSV.
 
     ``progress`` receives small dictionaries at the configured interval.  A
-    forward-work-budget stop is normal: the current frame is already durable,
-    the CSV is refreshed, and a later call with the same scientific grid
-    resumes it.  Replay of durable prefixes does not consume this budget, and
-    an individual solver call cannot be interrupted.  Budgets, progress
-    settings, and ``run_quantum`` may change between calls; scientific settings
-    may not.
+    compatible ``exact_checkpoint_source`` is opened read-only and contributes
+    only successful classical records; quantum records are never imported.
+    Durable exact selections restore tracker state without re-running the
+    classical optimizer.  A forward-work-budget stop is normal: the current
+    frame is already durable, the CSV is refreshed, and a later call with the
+    same scientific grid resumes it.  Replay of durable prefixes does not
+    consume this budget, and an individual solver call cannot be interrupted.
+    Budgets, progress settings, and ``run_quantum`` may change between calls;
+    scientific settings may not.
     """
 
     benchmark = config or OvernightBenchmarkConfig()
@@ -409,6 +419,7 @@ def run_overnight_benchmark(
         )
     )
     stopped_reason: str | None = None
+    imported_exact_frames = 0
 
     with closing(sqlite3.connect(database_path, timeout=30.0)) as connection:
         _initialize_database(
@@ -417,6 +428,13 @@ def run_overnight_benchmark(
             exact_solver=classical,
             quantum_solver=neutral_atom,
         )
+        if benchmark.exact_checkpoint_source is not None:
+            imported_exact_frames = _import_exact_checkpoints(
+                connection,
+                benchmark.exact_checkpoint_source,
+                benchmark,
+                exact_solver=classical,
+            )
         existing_exact = _load_table(connection, "exact_frames")
         processed_events = 0
 
@@ -450,6 +468,14 @@ def run_overnight_benchmark(
                 ):
                     stopped_reason = "forward_work_budget_exhausted"
                     break
+                if replaying_success:
+                    _replay_exact_checkpoint(
+                        tracker,
+                        image,
+                        checkpoint,
+                        frame=frame,
+                    )
+                    continue
                 frame_started = perf_counter()
                 record, _, _ = _process_exact_frame(
                     scenario,
@@ -461,10 +487,6 @@ def run_overnight_benchmark(
                     match_distance_px=benchmark.match_distance_px,
                     store_detailed_records=benchmark.store_detailed_records,
                 )
-                if replaying_success:
-                    _verify_replayed_frame(checkpoint, record)
-                    continue
-
                 forward_work_seconds += perf_counter() - frame_started
                 _store_record(connection, "exact_frames", record)
                 existing_exact[(scenario.name, frame)] = record
@@ -538,21 +560,14 @@ def run_overnight_benchmark(
                 tracker = HPC(benchmark.hpc_config, sequence=scenario.config.sequence)
                 generator = SyntheticDataGenerator(scenario.config)
                 final_target = max(target_frames)
-                for frame, (image, labels) in enumerate(generator.iter_frames()):
+                for frame, (image, _) in enumerate(generator.iter_frames()):
                     if frame > final_target:
                         break
-                    replay, prepared, exact_result = _process_exact_frame(
-                        scenario,
+                    prepared, exact_result = _replay_exact_checkpoint(
                         tracker,
-                        classical,
                         image,
-                        labels,
+                        existing_exact[(scenario.name, frame)],
                         frame=frame,
-                        match_distance_px=benchmark.match_distance_px,
-                        store_detailed_records=benchmark.store_detailed_records,
-                    )
-                    _verify_replayed_frame(
-                        existing_exact[(scenario.name, frame)], replay
                     )
                     if frame not in target_frames:
                         continue
@@ -630,6 +645,7 @@ def run_overnight_benchmark(
         candidate_count=len(candidates),
         elapsed_seconds=perf_counter() - started,
         forward_work_seconds=forward_work_seconds,
+        imported_exact_frames=imported_exact_frames,
     )
     return BenchmarkResult(
         records=records,
@@ -1133,6 +1149,86 @@ def _initialize_database(
     connection.commit()
 
 
+def _import_exact_checkpoints(
+    connection: sqlite3.Connection,
+    source_path: Path,
+    config: OvernightBenchmarkConfig,
+    *,
+    exact_solver: object,
+) -> int:
+    """Import compatible successful exact records into a fresh campaign.
+
+    The source database remains read-only.  Quantum records are deliberately
+    ignored so a changed quantum method cannot silently reuse stale results.
+    """
+
+    source = source_path.resolve()
+    target = config.database_path.resolve()
+    if source == target:
+        return 0
+    if not source.is_file():
+        raise FileNotFoundError(f"exact checkpoint source does not exist: {source}")
+
+    target_scenarios = {scenario.name: scenario for scenario in config.scenarios}
+    expected_methodology = {
+        "hpc_config": asdict(config.hpc_config),
+        "match_distance_px": config.match_distance_px,
+        "exact_maximum_component_nodes": config.exact_maximum_component_nodes,
+        "store_detailed_records": config.store_detailed_records,
+        "exact_solver": _solver_descriptor(exact_solver),
+    }
+    imported = 0
+    source_uri = f"{source.as_uri()}?mode=ro"
+    with closing(sqlite3.connect(source_uri, uri=True, timeout=30.0)) as source_db:
+        manifest_row = source_db.execute(
+            "SELECT manifest_json FROM manifest WHERE singleton = 1"
+        ).fetchone()
+        if manifest_row is None:
+            raise ValueError("exact checkpoint source has no benchmark manifest")
+        source_manifest = json.loads(str(manifest_row[0]))
+        for key, expected in expected_methodology.items():
+            if source_manifest.get(key) != expected:
+                raise ValueError(
+                    "exact checkpoint source is incompatible with the current "
+                    f"classical methodology ({key})"
+                )
+
+        for scenario_name, frame, record_json, committed_utc in source_db.execute(
+            """
+            SELECT scenario, frame, record_json, committed_utc
+            FROM exact_frames
+            """
+        ):
+            scenario = target_scenarios.get(str(scenario_name))
+            frame_number = int(frame)
+            if scenario is None or not 0 <= frame_number < scenario.config.frame_count:
+                continue
+            record = json.loads(str(record_json))
+            if (
+                record.get("scenario") != scenario.name
+                or int(record.get("frame", -1)) != frame_number
+                or record.get("synthetic_config_json")
+                != _canonical_json(asdict(scenario.config))
+            ):
+                raise ValueError(
+                    "exact checkpoint source contains a scenario-name collision "
+                    f"for {scenario.name!r} frame {frame_number}"
+                )
+            if record.get("exact_status") not in SUCCESS_STATUSES:
+                continue
+            cursor = connection.execute(
+                """
+                INSERT OR IGNORE INTO exact_frames
+                    (scenario, frame, record_json, committed_utc)
+                VALUES (?, ?, ?, ?)
+                """,
+                (scenario.name, frame_number, str(record_json), str(committed_utc)),
+            )
+            imported += cursor.rowcount
+    connection.commit()
+    return imported
+
+
 def _manifest(
     config: OvernightBenchmarkConfig,
     *,
@@ -1227,19 +1323,68 @@ def _load_table(
     return rows
 
 
-def _verify_replayed_frame(
-    checkpoint: Mapping[str, object], replay: Mapping[str, object]
-) -> None:
-    comparable = (
-        "exact_status",
-        "exact_objective",
-        "exact_selected_ids_json",
-        "input_fingerprint",
+def _replay_exact_checkpoint(
+    tracker: HPC,
+    image: np.ndarray,
+    checkpoint: Mapping[str, object],
+    *,
+    frame: int,
+) -> tuple[PreparedFrame, SolverResult]:
+    """Advance from a durable exact selection without optimizing it again."""
+
+    status = str(checkpoint.get("exact_status", ""))
+    if status not in SUCCESS_STATUSES:
+        raise ValueError("only successful exact checkpoints can be replayed")
+    prepared = tracker.prepare_frame(image, frame=frame)
+    solver_input = prepared.solver_input()
+    if checkpoint.get("input_fingerprint") != solver_input.fingerprint:
+        raise RuntimeError(
+            "checkpoint replay diverged from the recorded exact frame graph"
+        )
+    result = SolverResult(
+        problem_id=solver_input.problem_id,
+        input_fingerprint=solver_input.fingerprint,
+        solver_name="classical_exact_checkpoint",
+        selected_ids=tuple(
+            int(node_id)
+            for node_id in json.loads(
+                str(checkpoint.get("exact_selected_ids_json", "[]"))
+            )
+        ),
+        objective=float(checkpoint["exact_objective"]),
+        feasible=True,
+        status=status,
+        runtime_seconds=float(checkpoint.get("exact_runtime_seconds") or 0.0),
+        diagnostics=json.loads(
+            str(checkpoint.get("exact_diagnostics_json") or "{}")
+        ),
     )
-    if any(checkpoint.get(key) != replay.get(key) for key in comparable):
+    frame_result = tracker.advance(prepared, result)
+    replayed_state = {
+        "track_ids_json": _canonical_json(
+            [track.track_id for track in frame_result.tracks]
+        ),
+        "track_positions_json": _canonical_json(
+            [
+                {
+                    "track_id": track.track_id,
+                    "x_px": track.position[0],
+                    "y_px": track.position[1],
+                }
+                for track in frame_result.tracks
+            ]
+        ),
+        "assigned_observation_ids_json": _canonical_json(
+            frame_result.assigned_observation_ids
+        ),
+    }
+    if any(
+        checkpoint.get(key) != value for key, value in replayed_state.items()
+    ):
         raise RuntimeError(
             "checkpoint replay diverged from the recorded exact trajectory"
         )
+    return prepared, result
 
 
 def _exact_scenario_state(
@@ -1601,6 +1746,7 @@ def _summarize(
     candidate_count: int,
     elapsed_seconds: float,
     forward_work_seconds: float,
+    imported_exact_frames: int,
 ) -> dict[str, object]:
     exact_successes = sum(row.get("exact_status") in SUCCESS_STATUSES for row in records)
     quantum_attempts = sum(bool(row.get("quantum_attempted")) for row in records)
@@ -1690,6 +1836,7 @@ def _summarize(
         "scenario_count": len(config.scenarios),
         "expected_exact_frames": expected_exact,
         "checkpointed_exact_frames": len(records),
+        "imported_exact_frames": imported_exact_frames,
         "exact_screen_finished": exact_screen_finished,
         "exact_all_successful": exact_all_successful,
         "exact_complete": exact_complete,

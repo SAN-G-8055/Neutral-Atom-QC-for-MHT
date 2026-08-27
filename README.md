@@ -15,36 +15,20 @@ python -m pip install -e ".[test,notebook,quantum]"
 jupyter lab user_notebook.ipynb
 ```
 
-**The notebook works out of the box.** It starts with a small,
-quantum-friendly synthetic sequence. Set `USE_QUANTUM_DEMO_DATA = False` to
-prefer installed real sequence-01 frames, with synthetic data retained as the
-fallback. The later benchmark section defaults to
-`BENCHMARK_PROFILE = "overnight"`, so use the `"smoke"` profile before choosing
-Run All if you only want a short environment check. The smoke grid has 44
-exact frames and, for the current deterministic seed, nine sampled quantum
-frames. In the notebook you can:
+The notebook is now a focused, short campaign. It varies one combined-noise
+severity while retaining object count and random seed as design and replication
+variables. Its 120 scenarios reuse 4,800 completed exact records from
+`outputs/overnight/schema-2.1/overnight/benchmark.sqlite3`; old quantum records
+are never imported. Stored exact selections restore the tracking trajectory
+without running the classical optimizer again.
 
-- run one frame end to end (detect, associate, plot the result);
-- run three frames with `QuantumSolver(maximum_component_nodes=8)` by default;
-- independently vary motion, missed detections, clutter, sensor noise, density,
-  and random seed across a checkpointed synthetic campaign;
-- screen the whole grid exactly, then spend the expensive neutral-atom budget on
-  a deterministic sample of supported component sizes; and
-- resume from the SQLite checkpoint and regenerate a tidy CSV plus eight figures.
-
-The overnight profile contains 520 synthetic scenarios and 20,800 exact-screen
-frames. It raises the exact component cap to 128 nodes for the 55-object cells,
-then runs up to five neutral-atom candidates per difficulty-axis, severity, and
-supported non-clique component-size stratum (at most 910 candidates across
-sizes 2 through 8). Its ten-hour setting is a **forward-work checkpoint budget**, not
-a hard wall-clock deadline: deterministic replay and final export are outside
-the budget, and an individual exact or neutral-atom call runs to completion
-before the budget is checked again. Elapsed time can therefore exceed ten
-hours. Progress and results are saved under
-`outputs/overnight/schema-2.1/overnight/`; rerun the long cell to continue from its last
-committed frame. Compact scalar records are the default; set
-`store_detailed_records=True` only when you also want every full graph and track
-state in the database.
+The new neutral-atom work uses a quota of three frames per severity/component-
+size stratum and a 25-minute **forward-work checkpoint budget**. This is not a
+hard wall-clock timeout: inexpensive replay and final export are outside the
+budget, and an individual quantum call finishes atomically. Results are saved
+under `outputs/overnight/schema-2.2/combined_quick/`; rerun the benchmark cell
+to resume. The remaining cells generate eight figures, including the validated
+frame-2 solver layout and combined-noise coverage, quality, and runtime plots.
 
 To use the quantum solver, install the optional Pulser simulation stack:
 
@@ -151,9 +135,14 @@ result may advance tracking state.
 `optimal`, because sampling does not prove the maximum-weight solution.
 Singleton and complete-clique components are resolved directly (the Rabi
 heuristic requires at least one nonedge); every other supported component uses
-the Pulser simulation. `NeutralAtomConfig` exposes `random_seed`,
-`mapping_tolerance`, `mapping_max_iterations`, `pulse_duration_ns`,
-`interaction_scale`, and `qutip_cache_dir`;
+the Pulser simulation. A converged interaction fit is accepted only when its
+blockade graph exactly matches the logical component. If it does not, seeded
+topology-aware refinements pull intended edges inside the blockade radius and
+push nonedges outside it; an unrepairable component reports `embedding_failed`
+before Pulser runs. `NeutralAtomConfig` exposes `random_seed`,
+`mapping_tolerance`, `mapping_max_iterations`, `topology_restarts`,
+`topology_safety_factor`, `pulse_duration_ns`, `interaction_scale`, and
+`qutip_cache_dir`.
 `QuantumSolver(maximum_component_nodes=16)` caps the exponentially scaling
 state-vector simulation. Oversized components, negative weights, failed
 embeddings, or missing feasible samples report `unsupported_size`,
@@ -223,6 +212,9 @@ for image, tracking_labels in SyntheticDataGenerator(config).iter_frames():
 `run_overnight_benchmark()` streams the grid through the tracker, matches
 detections to synthetic labels, screens exact MWIS results, selects a stable
 axis/severity/size-stratified quantum sample, and commits each row to SQLite.
+An optional `exact_checkpoint_source` imports compatible successful exact rows
+from an older campaign, read-only, and replays their stored selections rather
+than reoptimizing them.
 Solver failures and frames outside the quantum component cap are retained as
 results rather than terminating the campaign. Notebook heatmaps annotate
 prepared-frame coverage and quantum sample counts. Treat partial cells as
@@ -233,11 +225,9 @@ The joined records also evaluate retained tracks against synthetic identities:
 tracking recall and precision, spatial error, identity correctness, ID switches,
 and fragmentations remain available alongside detector and solver metrics.
 
-The notebook preset creates `data/synthetic/SYN-MHT-QUANTUM-v1/`, with raw
-images in `01/` and tracking labels in `01_GT/TRA/`. Generated datasets are
-local and ignored by Git; generation refuses to overwrite a nonempty dataset
-directory. Use a new versioned `dataset_name` after changing any generation
-parameter so an older cached sequence cannot be mistaken for the new one.
+The notebook streams its synthetic frames in memory. Its first figure also
+shows `data/PhC-C2DL-PSC/01/t000.tif` when that optional real frame is installed;
+otherwise the real-data panel is explicitly marked unavailable.
 
 ## Project layout
 

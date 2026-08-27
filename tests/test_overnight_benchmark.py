@@ -12,6 +12,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+import overnight_benchmark as benchmark_module
 from classical_solver import ClassicalSolver
 from neutral_atom import NeutralAtomRun, QuantumSolver
 from overnight_benchmark import (
@@ -183,6 +184,42 @@ def test_exact_campaign_checkpoints_exports_and_resumes(tmp_path: Path) -> None:
     )
     assert len(resumed.records) == 4
     assert resumed.summary["checkpointed_exact_frames"] == 4
+
+
+def test_compatible_exact_checkpoints_can_seed_a_reduced_campaign(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_config = OvernightBenchmarkConfig(
+        scenarios=_smoke_scenarios(),
+        output_directory=tmp_path / "source",
+        run_quantum=False,
+    )
+    source_result = run_overnight_benchmark(source_config)
+    target_config = OvernightBenchmarkConfig(
+        scenarios=_smoke_scenarios()[:1],
+        output_directory=tmp_path / "target",
+        exact_checkpoint_source=source_result.database_path,
+        run_quantum=False,
+    )
+
+    def unexpected_exact_recomputation(*args, **kwargs):
+        raise AssertionError("imported exact frames must not be recomputed")
+
+    monkeypatch.setattr(
+        benchmark_module,
+        "_process_exact_frame",
+        unexpected_exact_recomputation,
+    )
+    result = run_overnight_benchmark(target_config)
+
+    assert result.stopped_reason is None
+    assert len(result.records) == 2
+    assert result.summary["imported_exact_frames"] == 2
+    assert result.summary["forward_work_seconds"] == 0.0
+    assert result.summary["campaign_complete"] is True
+    with sqlite3.connect(source_result.database_path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM exact_frames").fetchone()[0] == 4
 
 
 def test_short_budget_resume_replays_for_free_and_always_advances(
@@ -370,6 +407,54 @@ class _ExactFakeRunner:
             mapping_success=True,
             execution_mode="test",
         )
+
+
+class _CountingClassicalSolver(ClassicalSolver):
+    def __init__(self) -> None:
+        super().__init__(maximum_component_nodes=64)
+        self.selection_calls = 0
+
+    def _select(self, solver_input: SolverInput) -> SolverSelection:
+        self.selection_calls += 1
+        return super()._select(solver_input)
+
+
+def test_quantum_resume_replays_exact_selections_without_reoptimizing(
+    tmp_path: Path,
+) -> None:
+    config = OvernightBenchmarkConfig(
+        scenarios=(
+            BenchmarkScenario(
+                name="quantum-demo-replay",
+                config=QUANTUM_DEMO_DATA_CONFIG,
+                axis="baseline",
+                severity=0.0,
+            ),
+        ),
+        output_directory=tmp_path,
+        run_quantum=False,
+        quantum_max_nonclique_component_nodes=8,
+        quantum_quota_per_stratum=1,
+    )
+    classical = _CountingClassicalSolver()
+    quantum = QuantumSolver(maximum_component_nodes=8, runner=_ExactFakeRunner())
+    screened = run_overnight_benchmark(
+        config,
+        exact_solver=classical,
+        quantum_solver=quantum,
+    )
+    assert screened.summary["exact_complete"] is True
+    assert classical.selection_calls == QUANTUM_DEMO_DATA_CONFIG.frame_count
+
+    classical.selection_calls = 0
+    completed = run_overnight_benchmark(
+        replace(config, run_quantum=True),
+        exact_solver=classical,
+        quantum_solver=quantum,
+    )
+
+    assert completed.summary["quantum_attempts"] > 0
+    assert classical.selection_calls == 0
 
 
 def test_quantum_candidates_use_an_injected_runner_and_join_exact_metrics(

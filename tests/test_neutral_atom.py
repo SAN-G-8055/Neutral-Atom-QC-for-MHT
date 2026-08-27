@@ -338,6 +338,8 @@ def test_configuration_defaults_preserve_the_quantum_attempt_parameters() -> Non
     assert config.random_seed == 0
     assert config.mapping_tolerance == 1e-6
     assert config.mapping_max_iterations == 200_000
+    assert config.topology_restarts == 8
+    assert config.topology_safety_factor == 1.05
     assert config.pulse_duration_ns == 40_000
     assert config.interaction_scale == 10.0
 
@@ -346,3 +348,19 @@ def test_configuration_defaults_preserve_the_quantum_attempt_parameters() -> Non
 def test_configuration_rejects_seeds_outside_numpy_range(seed: int) -> None:
     with pytest.raises(ValueError, match="random_seed"):
         NeutralAtomConfig(random_seed=seed)
+
+
+@pytest.mark.parametrize(
+    ("keyword", "value"),
+    (
+        ("topology_restarts", 0),
+        ("topology_safety_factor", 1.0),
+        ("interaction_scale", 1.0),
+    ),
+)
+def test_configuration_rejects_invalid_topology_settings(
+    keyword: str,
+    value: float,
+) -> None:
+    with pytest.raises(ValueError, match=keyword):
+        NeutralAtomConfig(**{keyword: value})

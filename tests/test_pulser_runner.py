@@ -363,7 +363,13 @@ def test_pulser_runner_builds_the_original_program_without_drawing(
     assert run.atom_order == ("q2", "q0", "q1")
     assert run.bitstring_counts == (("001", 7), ("110", 3))
     assert run.coordinates == ((0.0, 0.0), (1.0, 0.0), (2.0, 0.0))
-    assert run.mapping_cost == 0.125
+    assert run.mapping_cost == pytest.approx(
+        runner.evaluate_mapping(
+            np.asarray(run.coordinates).ravel(),
+            np.asarray(masked_matrix),
+            device,
+        )
+    )
     assert run.mapping_success is True
     assert run.program is not None
     assert run.program.omega == 10.0
@@ -374,6 +380,153 @@ def test_pulser_runner_builds_the_original_program_without_drawing(
     assert random_state_after[0] == random_state_before[0]
     np.testing.assert_array_equal(random_state_after[1], random_state_before[1])
     assert random_state_after[2:] == random_state_before[2:]
+
+
+def test_pulser_runner_repairs_a_missing_blockade_edge(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    component = NeutralAtomComponent(
+        component_id=3,
+        node_ids=(17, 42, 99),
+        weights=(2.0, 5.0, 3.0),
+        edges=((17, 42), (42, 99)),
+        matrix=(
+            (2.0, 1.0, 0.0),
+            (1.0, 5.0, 1.0),
+            (0.0, 1.0, 3.0),
+        ),
+    )
+    pulser = FakePulser()
+    device = FakeDevice()
+    backend_factory = FakeBackendFactory()
+    runner = PulserQutipRunner(
+        NeutralAtomConfig(topology_restarts=1),
+    )
+    calls: list[object] = []
+    results = iter(
+        (
+            SimpleNamespace(
+                x=np.array((0.0, 0.0, 10.0, 0.0, 11.0, 0.0)),
+                fun=0.5,
+                success=True,
+            ),
+            SimpleNamespace(
+                x=np.array((0.0, 0.0, 1.0, 0.0, 2.5, 0.0)),
+                fun=0.0,
+                success=True,
+            ),
+        )
+    )
+
+    def scripted_minimize(function, *args, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append(function)
+        return next(results)
+
+    monkeypatch.setattr(
+        runner,
+        "_runtime",
+        lambda: (pulser, backend_factory, device),
+    )
+    monkeypatch.setattr(neutral_atom_module, "minimize", scripted_minimize)
+
+    run = runner.execute(component)
+
+    assert calls == [runner.evaluate_mapping, runner.evaluate_topology]
+    coordinates = np.asarray(run.coordinates)
+    omega, _, missing, unwanted = runner._embedding_geometry(
+        coordinates,
+        np.asarray(component.matrix) * ~np.eye(3, dtype=bool),
+        device,
+    )
+    assert missing == unwanted == ()
+    assert run.program is not None
+    assert run.program.omega == pytest.approx(omega)
+    assert backend_factory.backends[0].run_calls == 1
+
+
+def test_topology_optimizer_repairs_the_fig4_leaf_embedding() -> None:
+    component = NeutralAtomComponent(
+        component_id=0,
+        node_ids=(1, 2, 3, 4, 6),
+        weights=(1.0, 1.0, 1.0, 1.0, 1.0),
+        edges=((1, 2), (2, 3), (2, 4), (3, 4), (4, 6)),
+        matrix=(
+            (1.0, 1.0, 0.0, 0.0, 0.0),
+            (1.0, 1.0, 1.0, 1.0, 0.0),
+            (0.0, 1.0, 1.0, 1.0, 0.0),
+            (0.0, 1.0, 1.0, 1.0, 1.0),
+            (0.0, 0.0, 0.0, 1.0, 1.0),
+        ),
+    )
+    initial = np.asarray(
+        (
+            (2.6733713718527543, 19.900852145445548),
+            (-9.90134829874097, -3.636174960773828),
+            (-9.844852080898136, 6.881306805648807),
+            (-0.7622340383116302, 1.5712926996735987),
+            (9.547403664897406, -0.5231195148669161),
+        )
+    )
+    runner = PulserQutipRunner(NeutralAtomConfig(topology_restarts=3))
+    matrix = np.asarray(component.matrix)
+    masked_matrix = matrix * ~np.eye(len(matrix), dtype=bool)
+    initial_cost = runner.evaluate_mapping(initial.ravel(), masked_matrix, FakeDevice())
+    _, _, initial_missing, initial_unwanted = runner._embedding_geometry(
+        initial,
+        masked_matrix,
+        FakeDevice(),
+    )
+
+    coordinates, cost, _ = runner._refine_topology(
+        component,
+        initial,
+        matrix,
+        FakeDevice(),
+    )
+    _, _, missing, unwanted = runner._embedding_geometry(
+        coordinates,
+        masked_matrix,
+        FakeDevice(),
+    )
+
+    assert initial_missing == ((0, 1),)
+    assert initial_unwanted == ()
+    assert missing == unwanted == ()
+    assert cost < initial_cost
+
+
+def test_pulser_runner_rejects_an_unrepairable_blockade_graph(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pulser = FakePulser()
+    device = FakeDevice()
+    backend_factory = FakeBackendFactory()
+    runner = PulserQutipRunner(
+        NeutralAtomConfig(topology_restarts=1),
+    )
+    invalid = np.array((0.0, 0.0, 10.0, 0.0, 11.0, 0.0))
+    calls = 0
+
+    def unrepairable_minimize(*args, **kwargs):  # type: ignore[no-untyped-def]
+        nonlocal calls
+        calls += 1
+        return SimpleNamespace(x=invalid, fun=0.5, success=True)
+
+    monkeypatch.setattr(
+        runner,
+        "_runtime",
+        lambda: (pulser, backend_factory, device),
+    )
+    monkeypatch.setattr(neutral_atom_module, "minimize", unrepairable_minimize)
+
+    result = QuantumSolver(runner=runner).solve(path_problem())
+
+    assert calls == 2
+    assert result.status == "embedding_failed"
+    assert not result.successful
+    assert "initial missing edges=((1, 2),)" in result.diagnostics["message"]
+    assert pulser.registers == []
+    assert backend_factory.backends == []
 
 
 def test_nonconverged_finite_embedding_becomes_an_unsuccessful_result(

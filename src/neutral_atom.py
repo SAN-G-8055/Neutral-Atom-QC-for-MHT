@@ -41,6 +41,8 @@ class NeutralAtomConfig:
     random_seed: int = 0
     mapping_tolerance: float = 1e-6
     mapping_max_iterations: int = 200_000
+    topology_restarts: int = 8
+    topology_safety_factor: float = 1.05
     pulse_duration_ns: int = 40_000
     interaction_scale: float = 10.0
     qutip_cache_dir: Path = Path("data") / ".cache" / "qutip"
@@ -52,10 +54,17 @@ class NeutralAtomConfig:
             raise ValueError("mapping_tolerance must be finite and positive")
         if self.mapping_max_iterations < 1:
             raise ValueError("mapping_max_iterations must be positive")
+        if self.topology_restarts < 1:
+            raise ValueError("topology_restarts must be positive")
+        if (
+            not isfinite(self.topology_safety_factor)
+            or self.topology_safety_factor <= 1.0
+        ):
+            raise ValueError("topology_safety_factor must be finite and greater than 1")
         if self.pulse_duration_ns < 1:
             raise ValueError("pulse_duration_ns must be positive")
-        if not isfinite(self.interaction_scale) or self.interaction_scale <= 0.0:
-            raise ValueError("interaction_scale must be finite and positive")
+        if not isfinite(self.interaction_scale) or self.interaction_scale <= 1.0:
+            raise ValueError("interaction_scale must be finite and greater than 1")
 
 
 @dataclass(frozen=True, slots=True)
@@ -218,6 +227,247 @@ class PulserQutipRunner:
             ) / 4
         return float(np.linalg.norm(mapped - matrix))
 
+    @staticmethod
+    def evaluate_topology(
+        new_coordinates: np.ndarray,
+        matrix: np.ndarray,
+        target_edge_distance: float,
+        required_nonedge_distance: float,
+    ) -> float:
+        """Penalize edge distortion and nonedges that are too close."""
+
+        coordinates = np.reshape(new_coordinates, (len(matrix), 2))
+        distances = squareform(pdist(coordinates))
+        upper_triangle = np.triu(np.ones(matrix.shape, dtype=bool), k=1)
+        edge_mask = upper_triangle & (matrix > 0.0)
+        nonedge_mask = upper_triangle & (matrix == 0.0)
+        edge_errors = distances[edge_mask] / target_edge_distance - 1.0
+        nonedge_violations = np.maximum(
+            required_nonedge_distance / target_edge_distance
+            - distances[nonedge_mask] / target_edge_distance,
+            0.0,
+        )
+        return float(
+            np.dot(edge_errors, edge_errors)
+            + 10.0 * np.dot(nonedge_violations, nonedge_violations)
+        )
+
+    @staticmethod
+    def _center_coordinates(coordinates: np.ndarray) -> np.ndarray:
+        """Remove irrelevant translation and keep the register near the origin."""
+
+        return coordinates - np.mean(coordinates, axis=0, keepdims=True)
+
+    @classmethod
+    def _scale_edge_median(
+        cls,
+        coordinates: np.ndarray,
+        matrix: np.ndarray,
+        target_edge_distance: float,
+    ) -> np.ndarray:
+        """Center a candidate and scale its median logical edge to the target."""
+
+        centered = cls._center_coordinates(coordinates)
+        distances = squareform(pdist(centered))
+        edge_mask = np.triu(matrix > 0.0, k=1)
+        edge_distances = distances[edge_mask]
+        positive = edge_distances[edge_distances > np.finfo(float).eps]
+        if positive.size:
+            centered *= target_edge_distance / float(np.median(positive))
+        return centered
+
+    def _topology_starts(
+        self,
+        coordinates: np.ndarray,
+        matrix: np.ndarray,
+        target_edge_distance: float,
+    ) -> tuple[np.ndarray, ...]:
+        """Build deterministic graph-aware and seeded starts for refinement."""
+
+        node_count = len(matrix)
+        starts = [
+            self._scale_edge_median(
+                coordinates,
+                matrix,
+                target_edge_distance,
+            )
+        ]
+
+        adjacency = matrix > 0.0
+        np.fill_diagonal(adjacency, False)
+        laplacian = np.diag(np.sum(adjacency, axis=1)) - adjacency.astype(float)
+        _, eigenvectors = np.linalg.eigh(laplacian)
+        spectral = eigenvectors[:, 1:3]
+        if spectral.shape[1] == 1:
+            spectral = np.column_stack((spectral[:, 0], np.zeros(node_count)))
+        starts.append(
+            self._scale_edge_median(spectral, matrix, target_edge_distance)
+        )
+
+        angles = 2.0 * np.pi * np.arange(node_count) / node_count
+        circle = np.column_stack((np.cos(angles), np.sin(angles)))
+        starts.append(self._scale_edge_median(circle, matrix, target_edge_distance))
+
+        while len(starts) < self.config.topology_restarts:
+            random_start = np.random.normal(size=(node_count, 2))
+            starts.append(
+                self._scale_edge_median(
+                    random_start,
+                    matrix,
+                    target_edge_distance,
+                )
+            )
+        return tuple(starts[: self.config.topology_restarts])
+
+    def _embedding_geometry(
+        self,
+        coordinates: np.ndarray,
+        matrix: np.ndarray,
+        device: object,
+    ) -> tuple[float, float, tuple[tuple[int, int], ...], tuple[tuple[int, int], ...]]:
+        """Return the pulse scale, blockade radius, and topology mismatches."""
+
+        nonedge_distances: list[float] = []
+        pair_distances: dict[tuple[int, int], float] = {}
+        for right in range(1, matrix.shape[0]):
+            for left in range(right):
+                distance = float(euclidean(coordinates[right], coordinates[left]))
+                pair_distances[(left, right)] = distance
+                if matrix[right, left] == 0.0:
+                    nonedge_distances.append(distance)
+        if not nonedge_distances or min(nonedge_distances) <= 0.0:
+            raise NeutralAtomError(
+                "execution_error",
+                "embedding has no usable nonedge separation",
+            )
+
+        interaction_coefficient = float(device.interaction_coeff)
+        omega = float(
+            interaction_coefficient
+            / min(nonedge_distances) ** 6
+            * self.config.interaction_scale
+        )
+        if not isfinite(omega) or omega <= 0.0:
+            raise NeutralAtomError(
+                "execution_error",
+                "embedding produced an invalid Rabi frequency",
+            )
+        radius_function = getattr(device, "rydberg_blockade_radius", None)
+        blockade_radius = float(
+            radius_function(omega)
+            if callable(radius_function)
+            else (interaction_coefficient / omega) ** (1.0 / 6.0)
+        )
+        if not isfinite(blockade_radius) or blockade_radius <= 0.0:
+            raise NeutralAtomError(
+                "execution_error",
+                "device produced an invalid blockade radius",
+            )
+
+        missing_edges: list[tuple[int, int]] = []
+        unwanted_edges: list[tuple[int, int]] = []
+        for pair, distance in pair_distances.items():
+            intended = matrix[pair[0], pair[1]] > 0.0
+            blocked = distance <= blockade_radius
+            if intended and not blocked:
+                missing_edges.append(pair)
+            elif blocked and not intended:
+                unwanted_edges.append(pair)
+        return (
+            omega,
+            blockade_radius,
+            tuple(missing_edges),
+            tuple(unwanted_edges),
+        )
+
+    def _refine_topology(
+        self,
+        component: NeutralAtomComponent,
+        coordinates: np.ndarray,
+        matrix: np.ndarray,
+        device: object,
+    ) -> tuple[np.ndarray, float, float]:
+        """Repair a locally optimal interaction fit and require exact topology."""
+
+        masked_matrix = ~np.eye(matrix.shape[0], dtype=bool) * matrix
+        mapping_cost = self.evaluate_mapping(coordinates.ravel(), masked_matrix, device)
+        omega, _, missing, unwanted = self._embedding_geometry(
+            coordinates,
+            masked_matrix,
+            device,
+        )
+        if not missing and not unwanted:
+            return coordinates, mapping_cost, omega
+
+        target_edge_distance = float(
+            (float(device.interaction_coeff) / 4.0) ** (1.0 / 6.0)
+        )
+        required_nonedge_distance = float(
+            target_edge_distance
+            * self.config.interaction_scale ** (1.0 / 6.0)
+            * self.config.topology_safety_factor
+        )
+        feasible: list[tuple[float, np.ndarray, float]] = []
+        for start in self._topology_starts(
+            coordinates,
+            masked_matrix,
+            target_edge_distance,
+        ):
+            refinement = minimize(
+                self.evaluate_topology,
+                start.ravel(),
+                args=(
+                    masked_matrix,
+                    target_edge_distance,
+                    required_nonedge_distance,
+                ),
+                method="L-BFGS-B",
+                tol=self.config.mapping_tolerance,
+                options={"maxiter": self.config.mapping_max_iterations},
+            )
+            candidate = self._center_coordinates(
+                np.reshape(refinement.x, (len(matrix), 2))
+            )
+            if not np.all(np.isfinite(candidate)):
+                continue
+            try:
+                candidate_omega, _, candidate_missing, candidate_unwanted = (
+                    self._embedding_geometry(candidate, masked_matrix, device)
+                )
+            except NeutralAtomError:
+                continue
+            if candidate_missing or candidate_unwanted:
+                continue
+            candidate_cost = self.evaluate_mapping(
+                candidate.ravel(),
+                masked_matrix,
+                device,
+            )
+            if isfinite(candidate_cost):
+                feasible.append((candidate_cost, candidate, candidate_omega))
+
+        if not feasible:
+            missing_node_edges = tuple(
+                (component.node_ids[left], component.node_ids[right])
+                for left, right in missing
+            )
+            unwanted_node_edges = tuple(
+                (component.node_ids[left], component.node_ids[right])
+                for left, right in unwanted
+            )
+            raise NeutralAtomError(
+                "embedding_failed",
+                f"component {component.component_id} could not realize its exact "
+                f"blockade graph after {self.config.topology_restarts} refinements; "
+                f"initial missing edges={missing_node_edges}, "
+                f"initial unwanted edges={unwanted_node_edges}",
+            )
+        best_cost, best_coordinates, best_omega = min(
+            feasible,
+            key=lambda candidate: candidate[0],
+        )
+        return best_coordinates, best_cost, best_omega
+
     def execute(self, component: NeutralAtomComponent) -> NeutralAtomRun:
         """Embed, program, and emulate one non-trivial connected component."""
 
@@ -277,6 +527,12 @@ class PulserQutipRunner:
                 f"component {component.component_id} embedding did not converge: "
                 f"{mapping.message} (cost={mapping_cost:.6g})"
             )
+        coordinates_array, mapping_cost, omega = self._refine_topology(
+            component,
+            coordinates_array,
+            matrix,
+            device,
+        )
         coordinates = tuple(
             (float(coordinate[0]), float(coordinate[1]))
             for coordinate in coordinates_array
@@ -302,32 +558,6 @@ class PulserQutipRunner:
         )
         sequence.config_detuning_map(detuning_map, "dmm_0")
 
-        nonedge_distances: list[float] = []
-        for right in range(1, matrix.shape[0]):
-            # Check every left < right. The notebook's range(right - 1)
-            # accidentally skipped adjacent-index pairs.
-            for left in range(right):
-                distance = float(
-                    euclidean(coordinates_array[right], coordinates_array[left])
-                )
-                if matrix[right, left] == 0.0:
-                    nonedge_distances.append(distance)
-        if not nonedge_distances or min(nonedge_distances) <= 0.0:
-            raise NeutralAtomError(
-                "execution_error",
-                f"component {component.component_id} has no usable nonedge separation"
-            )
-
-        omega = float(
-            device.interaction_coeff
-            / min(nonedge_distances) ** 6
-            * self.config.interaction_scale
-        )
-        if not isfinite(omega) or omega <= 0.0:
-            raise NeutralAtomError(
-                "execution_error",
-                f"component {component.component_id} produced an invalid Rabi frequency"
-            )
         delta_initial = -omega
         delta_final = -delta_initial
         duration = self.config.pulse_duration_ns
